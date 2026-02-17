@@ -33,6 +33,12 @@ Response
 }
 ```
 
+
+Provider notes
+- `/v1/places/autocomplete` and `/v1/places/details` are backed by Mapbox Search (Geocoding API v6).
+- Requests are restricted to Singapore (`country=SG`) with Singapore proximity bias.
+- External calls use timeout <= 5s and max 2 retries.
+
 ## POST /v1/itineraries/generate
 Request
 {
