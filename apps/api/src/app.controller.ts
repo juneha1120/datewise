@@ -1,5 +1,5 @@
 import { Controller, Get } from '@nestjs/common';
-import { VibeSchema } from '@datewise/shared';
+// import { VibeSchema } from '@datewise/shared';
 
 @Controller()
 export class AppController {
@@ -8,7 +8,7 @@ export class AppController {
     return {
       service: 'datewise-api',
       status: 'ok',
-      supportedVibes: VibeSchema.options,
+      // supportedVibes: VibeSchema.options,
     };
   }
 }
