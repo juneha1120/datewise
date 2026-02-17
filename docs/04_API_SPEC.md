@@ -9,7 +9,7 @@ Request
   "durationMin": 120,
   "budget": "$|$$|$$$",
   "dateStyle": "FOOD|ACTIVITY|EVENT|SCENIC|SURPRISE",
-  "vibe": "COZY|ROMANTIC|LIVELY|ELEGANT|LOW_KEY",
+  "vibe": "CHILL|ACTIVE|ROMANTIC|ADVENTUROUS",
   "optional": {
     "food": ["VEG","HALAL_FRIENDLY","NO_ALCOHOL","NO_SEAFOOD"],
     "avoid": ["OUTDOOR","PHYSICAL","CROWDED","LOUD"],
@@ -31,7 +31,7 @@ Response
       "rating": 4.6,
       "reviewCount": 1200,
       "priceLevel": 2,
-      "tags": ["COZY","DATE_NIGHT"],
+      "tags": ["CHILL","DATE_NIGHT"],
       "reason": "string"
     }
   ],

@@ -12,3 +12,5 @@
 ## Debugging
 - Enable debug logs in API with LOG_LEVEL=debug
 - Inspect Redis keys for cache hit rate
+
+npm audit reports vulnerabilities in dev tooling via @nestjs/cli; not force-upgraded during scaffold to avoid breaking changes. Revisit before production.
