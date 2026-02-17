@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import * as assert from 'node:assert/strict';
+import { HttpException, HttpStatus } from '@nestjs/common';
 import { mapboxAutocompleteToResponse, mapboxDetailsToResponse } from './places.service';
 
 test('mapboxAutocompleteToResponse normalizes suggestions and enforces SG filtering', () => {
@@ -73,4 +74,47 @@ test('mapboxDetailsToResponse normalizes place details payload', () => {
     lng: 103.8463,
     types: ['poi'],
   });
+});
+
+test('mapboxAutocompleteToResponse filters features without SG country metadata', () => {
+  const response = mapboxAutocompleteToResponse({
+    features: [
+      {
+        properties: {
+          mapbox_id: 'mbx.unknown.1',
+          name: 'Unknown Country Feature',
+          full_address: 'Unknown address',
+        },
+      },
+    ],
+  });
+
+  assert.deepStrictEqual(response, { suggestions: [] });
+});
+
+test('mapboxAutocompleteToResponse maps normalization errors to BAD_GATEWAY HttpException', () => {
+  assert.throws(
+    () =>
+      mapboxAutocompleteToResponse({
+        features: [
+          {
+            properties: {
+              mapbox_id: 'mbx.sg.3',
+              context: {
+                country: {
+                  country_code: 'SG',
+                },
+              },
+            },
+          },
+        ],
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof HttpException);
+      assert.equal(error.getStatus(), HttpStatus.BAD_GATEWAY);
+      const response = error.getResponse() as Record<string, unknown>;
+      assert.equal(response.code, 'INVALID_EXTERNAL_RESPONSE');
+      return true;
+    },
+  );
 });
