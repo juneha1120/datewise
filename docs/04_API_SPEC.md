@@ -1,5 +1,38 @@
 # API Spec (v1)
 
+## GET /v1/places/autocomplete
+Query
+- `q`: string (required, min length 2, max length 120)
+
+Response
+```json
+{
+  "suggestions": [
+    {
+      "placeId": "string",
+      "primaryText": "string",
+      "secondaryText": "string"
+    }
+  ]
+}
+```
+
+## GET /v1/places/details
+Query
+- `placeId`: string (required, non-empty)
+
+Response
+```json
+{
+  "placeId": "string",
+  "name": "string",
+  "formattedAddress": "string",
+  "lat": 1.300,
+  "lng": 103.800,
+  "types": ["string"]
+}
+```
+
 ## POST /v1/itineraries/generate
 Request
 {
