@@ -1,0 +1,16 @@
+{
+  "name": "datewise",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev:api & npm run dev:web & wait",
+    "dev:web": "npm run dev --workspace @datewise/web",
+    "dev:api": "npm run dev --workspace @datewise/api",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  }
+}
