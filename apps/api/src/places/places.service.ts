@@ -64,7 +64,7 @@ export function mapboxAutocompleteToResponse(payload: unknown): PlacesAutocomple
     );
   }
 
-  const normalized = PlacesAutocompleteResponseSchema.parse({
+  const normalized = PlacesAutocompleteResponseSchema.safeParse({
     suggestions: parsed.data.features
       .filter((feature) => isSingaporeFeature(feature))
       .map((feature) => ({
@@ -79,7 +79,18 @@ export function mapboxAutocompleteToResponse(payload: unknown): PlacesAutocomple
       })),
   });
 
-  return normalized;
+  if (!normalized.success) {
+    throw new HttpException(
+      {
+        code: 'INVALID_EXTERNAL_RESPONSE',
+        message: 'Invalid autocomplete response from Mapbox.',
+        details: normalized.error.flatten(),
+      },
+      HttpStatus.BAD_GATEWAY,
+    );
+  }
+
+  return normalized.data;
 }
 
 export function mapboxDetailsToResponse(payload: unknown): PlaceDetailsResponse {
@@ -118,7 +129,7 @@ export function mapboxDetailsToResponse(payload: unknown): PlaceDetailsResponse 
   }
 
   const [lng, lat] = coordinates;
-  const normalized = PlaceDetailsResponseSchema.parse({
+  const normalized = PlaceDetailsResponseSchema.safeParse({
     placeId: feature.properties?.mapbox_id ?? feature.id ?? '',
     name: feature.properties?.name ?? feature.name ?? '',
     formattedAddress:
@@ -132,14 +143,23 @@ export function mapboxDetailsToResponse(payload: unknown): PlaceDetailsResponse 
     types: [feature.properties?.feature_type ?? 'place'],
   });
 
-  return normalized;
+  if (!normalized.success) {
+    throw new HttpException(
+      {
+        code: 'INVALID_EXTERNAL_RESPONSE',
+        message: 'Invalid place details response from Mapbox.',
+        details: normalized.error.flatten(),
+      },
+      HttpStatus.BAD_GATEWAY,
+    );
+  }
+
+  return normalized.data;
 }
 
 function isSingaporeFeature(feature: z.infer<typeof MapboxFeatureSchema>): boolean {
   const countryCode = feature.properties?.context?.country?.country_code;
-  if (!countryCode) {
-    return true;
-  }
+  if (!countryCode) return false;
 
   return countryCode.toLowerCase() === MAPBOX_SG_COUNTRY_CODE;
 }
