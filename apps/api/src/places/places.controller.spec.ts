@@ -1,5 +1,5 @@
-import { test } from 'node:test';
-import * as assert from 'node:assert/strict';
+declare const test: (name: string, fn: () => void | Promise<void>) => void;
+import * as assert from 'assert/strict';
 import { BadRequestException } from '@nestjs/common';
 import { PlacesController } from './places.controller';
 import { PlacesService } from './places.service';
@@ -20,6 +20,10 @@ test('autocomplete throws BadRequestException for invalid query params', async (
 
   await assert.rejects(async () => controller.autocomplete(''), (error: unknown) => {
     assert.ok(error instanceof BadRequestException);
+     if (!(error instanceof BadRequestException)) {
+      return false;
+    }
+
     const response = error.getResponse() as Record<string, unknown>;
     assert.equal(response.code, 'INVALID_PLACES_AUTOCOMPLETE_QUERY');
     return true;
@@ -42,6 +46,10 @@ test('details throws BadRequestException for invalid query params', async () => 
 
   await assert.rejects(async () => controller.details(''), (error: unknown) => {
     assert.ok(error instanceof BadRequestException);
+    if (!(error instanceof BadRequestException)) {
+      return false;
+    }
+
     const response = error.getResponse() as Record<string, unknown>;
     assert.equal(response.code, 'INVALID_PLACE_DETAILS_QUERY');
     return true;

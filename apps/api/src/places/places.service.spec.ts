@@ -1,5 +1,5 @@
-import { test } from 'node:test';
-import * as assert from 'node:assert/strict';
+declare const test: (name: string, fn: () => void | Promise<void>) => void;
+import * as assert from 'assert/strict';
 import { HttpException, HttpStatus } from '@nestjs/common';
 import { mapboxAutocompleteToResponse, mapboxDetailsToResponse } from './places.service';
 
@@ -111,6 +111,10 @@ test('mapboxAutocompleteToResponse maps normalization errors to BAD_GATEWAY Http
       }),
     (error: unknown) => {
       assert.ok(error instanceof HttpException);
+      if (!(error instanceof HttpException)) {
+        return false;
+      }
+
       assert.equal(error.getStatus(), HttpStatus.BAD_GATEWAY);
       const response = error.getResponse() as Record<string, unknown>;
       assert.equal(response.code, 'INVALID_EXTERNAL_RESPONSE');
