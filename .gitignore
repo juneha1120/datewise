@@ -1,8 +1,22 @@
-node_modules
-.next
-dist
-coverage
-*.log
+# Dependencies
+node_modules/
+
+# Build outputs / caches
+.next/
+dist/
+coverage/
+*.tsbuildinfo
+apps/api/dist/
+apps/web/.next/
+packages/shared/dist/
+
+# Environment files (local only)
 .env
 .env.local
+
+# Editor / OS
+.vscode/
 .DS_Store
+
+# Logs
+*.log

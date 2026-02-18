@@ -6,7 +6,8 @@
     "dev": "nest start --watch",
     "build": "nest build",
     "start": "node dist/main.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && node --test dist/**/*.spec.js"
   },
   "dependencies": {
     "@datewise/shared": "0.1.0",

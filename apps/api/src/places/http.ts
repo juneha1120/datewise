@@ -19,7 +19,7 @@ export async function fetchJsonWithRetry<T>(url: string): Promise<T> {
 
       if (!response.ok) {
         const body = await response.text();
-        throw new Error(`Google Places API failed (${response.status}): ${body}`);
+        throw new Error(`External places API failed (${response.status}): ${body}`);
       }
 
       return (await response.json()) as T;
@@ -37,7 +37,7 @@ export async function fetchJsonWithRetry<T>(url: string): Promise<T> {
   throw new HttpException(
     {
       code: 'EXTERNAL_SERVICE_ERROR',
-      message: 'Failed to fetch Google Places data.',
+      message: 'Failed to fetch places data.',
       details: String(lastError),
     },
     HttpStatus.BAD_GATEWAY,
