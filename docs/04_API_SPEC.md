@@ -1,5 +1,44 @@
 # API Spec (v1)
 
+## GET /v1/places/autocomplete
+Query
+- `q`: string (required, min length 2, max length 120)
+
+Response
+```json
+{
+  "suggestions": [
+    {
+      "placeId": "string",
+      "primaryText": "string",
+      "secondaryText": "string"
+    }
+  ]
+}
+```
+
+## GET /v1/places/details
+Query
+- `placeId`: string (required, non-empty)
+
+Response
+```json
+{
+  "placeId": "string",
+  "name": "string",
+  "formattedAddress": "string",
+  "lat": 1.300,
+  "lng": 103.800,
+  "types": ["string"]
+}
+```
+
+
+Provider notes
+- `/v1/places/autocomplete` and `/v1/places/details` are backed by Mapbox Search (Geocoding API v6).
+- Requests are restricted to Singapore (`country=SG`) with Singapore proximity bias.
+- External calls use timeout <= 5s and max 2 retries.
+
 ## POST /v1/itineraries/generate
 Request
 {

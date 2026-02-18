@@ -10,7 +10,7 @@
     "dev": "npm run dev:api & npm run dev:web & wait",
     "dev:web": "npm run dev --workspace @datewise/web",
     "dev:api": "npm run dev --workspace @datewise/api",
-    "build": "npm run build --workspaces --if-present",
+    "build": "npm run build --workspace @datewise/shared && npm run build --workspace @datewise/api && npm run build --workspace @datewise/web",
     "typecheck": "npm run typecheck --workspaces --if-present"
   }
 }
