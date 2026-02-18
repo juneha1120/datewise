@@ -1,23 +1,24 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 
 function parseEnvLine(line: string): [string, string] | null {
-  const trimmed = line.trim();
+  const trimmed = line.replace(/^\uFEFF/u, '').trim();
   if (!trimmed || trimmed.startsWith('#')) {
     return null;
   }
 
-  const equalsIndex = trimmed.indexOf('=');
+  const withoutExport = trimmed.startsWith('export ') ? trimmed.slice('export '.length).trim() : trimmed;
+  const equalsIndex = withoutExport.indexOf('=');
   if (equalsIndex <= 0) {
     return null;
   }
 
-  const key = trimmed.slice(0, equalsIndex).trim();
+  const key = withoutExport.slice(0, equalsIndex).trim();
   if (!key) {
     return null;
   }
 
-  let value = trimmed.slice(equalsIndex + 1).trim();
+  let value = withoutExport.slice(equalsIndex + 1).trim();
   if (
     (value.startsWith('"') && value.endsWith('"')) ||
     (value.startsWith("'") && value.endsWith("'"))
@@ -47,10 +48,31 @@ function loadEnvFile(filePath: string): void {
   }
 }
 
-export function loadApiEnvironment(): void {
+function buildEnvCandidates(): string[] {
   const cwd = process.cwd();
+  const here = __dirname;
+  const parent = dirname(here);
 
-  // support both `apps/api/.env` and monorepo root `.env`
-  loadEnvFile(resolve(cwd, '.env'));
-  loadEnvFile(resolve(cwd, '../../.env'));
+  const candidates = [
+    resolve(cwd, '.env'),
+    resolve(cwd, '.env.local'),
+    resolve(cwd, 'apps/api/.env'),
+    resolve(cwd, 'apps/api/.env.local'),
+    resolve(cwd, '../../.env'),
+    resolve(cwd, '../../.env.local'),
+    resolve(parent, '.env'),
+    resolve(parent, '.env.local'),
+    resolve(parent, '../.env'),
+    resolve(parent, '../.env.local'),
+    resolve(parent, '../../.env'),
+    resolve(parent, '../../.env.local'),
+  ];
+
+  return [...new Set(candidates)];
+}
+
+export function loadApiEnvironment(): void {
+  for (const envPath of buildEnvCandidates()) {
+    loadEnvFile(envPath);
+  }
 }

@@ -17,9 +17,10 @@
     "types": [
       "node"
     ],
+    "rootDir": "./src",
     "paths": {
       "@datewise/shared": [
-        "../../packages/shared/src/index.ts"
+        "../../packages/shared/dist/index.d.ts"
       ]
     }
   },

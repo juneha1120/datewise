@@ -8,7 +8,124 @@ import {
   PlacesAutocompleteResponseSchema,
 } from '@datewise/shared';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3001';
+function toFriendlyErrorMessage(prefix: string, error: unknown): string {
+  if (error instanceof Error && error.message) {
+    return `${prefix} (${error.message})`;
+  }
+
+  return prefix;
+}
+
+async function fetchFromWebApi(path: string): Promise<unknown> {
+  let response: Response;
+
+  try {
+    response = await fetch(path);
+  } catch (error) {
+    if (path.startsWith('/api/places/')) {
+      return fetchFromBrowserApi(path);
+    }
+
+    throw error;
+  }
+
+  if (!response.ok) {
+    let details = `HTTP ${response.status}`;
+    let parsedBody:
+      | {
+          message?: unknown;
+          code?: unknown;
+          details?: unknown;
+          triedBaseUrls?: unknown;
+        }
+      | null = null;
+
+    try {
+      parsedBody = (await response.json()) as {
+        message?: unknown;
+        code?: unknown;
+        details?: unknown;
+        triedBaseUrls?: unknown;
+      };
+
+      if (typeof parsedBody.code === 'string' && typeof parsedBody.message === 'string') {
+        details = `${parsedBody.code}: ${parsedBody.message}`;
+      } else if (typeof parsedBody.message === 'string') {
+        details = parsedBody.message;
+      }
+
+      if (typeof parsedBody.details === 'string') {
+        details = `${details} (${parsedBody.details})`;
+      }
+
+      if (Array.isArray(parsedBody.triedBaseUrls) && parsedBody.triedBaseUrls.every((item) => typeof item === 'string')) {
+        details = `${details} [tried: ${parsedBody.triedBaseUrls.join(', ')}]`;
+      }
+    } catch {
+      // fall back to status code only
+    }
+
+    if (
+      parsedBody &&
+      typeof parsedBody.code === 'string' &&
+      parsedBody.code === 'UPSTREAM_UNREACHABLE' &&
+      path.startsWith('/api/places/')
+    ) {
+      return fetchFromBrowserApi(path);
+    }
+
+    throw new Error(details);
+  }
+
+  return (await response.json()) as unknown;
+}
+
+
+const browserApiBaseCandidates = [
+  process.env.NEXT_PUBLIC_API_BASE_URL?.trim(),
+  'http://localhost:3001',
+  'http://127.0.0.1:3001',
+]
+  .filter((value): value is string => Boolean(value))
+  .map((value) => value.replace(/\/+$/u, ''));
+
+const browserApiBaseUrls = [...new Set(browserApiBaseCandidates)];
+
+function toBackendPath(webApiPath: string): string {
+  return webApiPath.replace(/^\/api\/places\//u, '/v1/places/');
+}
+
+async function fetchFromBrowserApi(path: string): Promise<unknown> {
+  const backendPath = toBackendPath(path);
+  let lastError: Error | null = null;
+
+  for (const baseUrl of browserApiBaseUrls) {
+    try {
+      const response = await fetch(`${baseUrl}${backendPath}`);
+      if (!response.ok) {
+        let details = `HTTP ${response.status}`;
+        try {
+          const body = (await response.json()) as { message?: unknown; code?: unknown };
+          if (typeof body.code === 'string' && typeof body.message === 'string') {
+            details = `${body.code}: ${body.message}`;
+          } else if (typeof body.message === 'string') {
+            details = body.message;
+          }
+        } catch {
+          // fall back to status code
+        }
+
+        throw new Error(`${baseUrl} -> ${details}`);
+      }
+
+      return (await response.json()) as unknown;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+    }
+  }
+
+  throw lastError ?? new Error('Browser fallback to API failed.');
+}
 
 export default function HomePage() {
   const [query, setQuery] = useState('');
@@ -39,23 +156,18 @@ export default function HomePage() {
       try {
         setLoading(true);
         setError(null);
-        const response = await fetch(
-          `${API_BASE_URL}/v1/places/autocomplete?q=${encodeURIComponent(debouncedQuery)}`,
+        const body = await fetchFromWebApi(
+          `/api/places/autocomplete?q=${encodeURIComponent(debouncedQuery)}`,
         );
 
-        if (!response.ok) {
-          throw new Error('Unable to load suggestions.');
-        }
-
-        const body = (await response.json()) as unknown;
         const parsed = PlacesAutocompleteResponseSchema.parse(body);
         if (!cancelled) {
           setSuggestions(parsed.suggestions);
         }
-      } catch {
+      } catch (caughtError) {
         if (!cancelled) {
           setSuggestions([]);
-          setError('Failed to load place suggestions. Please try again.');
+          setError(toFriendlyErrorMessage('Failed to load place suggestions. Please try again.', caughtError));
         }
       } finally {
         if (!cancelled) {
@@ -77,22 +189,15 @@ export default function HomePage() {
     try {
       setLoading(true);
       setError(null);
+      
+      const body = await fetchFromWebApi(`/api/places/details?placeId=${encodeURIComponent(placeId)}`);
 
-      const response = await fetch(
-        `${API_BASE_URL}/v1/places/details?placeId=${encodeURIComponent(placeId)}`,
-      );
-
-      if (!response.ok) {
-        throw new Error('Unable to fetch place details.');
-      }
-
-      const body = (await response.json()) as unknown;
       const details = PlaceDetailsResponseSchema.parse(body);
       setSelectedOrigin(details);
       setQuery(details.name);
       setSuggestions([]);
-    } catch {
-      setError('Failed to fetch selected place details.');
+    } catch (caughtError) {
+      setError(toFriendlyErrorMessage('Failed to fetch selected place details.', caughtError));
     } finally {
       setLoading(false);
     }

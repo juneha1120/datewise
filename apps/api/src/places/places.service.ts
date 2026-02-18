@@ -205,7 +205,7 @@ export class PlacesService {
       autocomplete: 'true',
       limit: '8',
       proximity: '103.8198,1.3521',
-      types: 'address,street,neighborhood,locality,place,poi',
+      types: 'address,street,neighborhood,locality,place',
     });
   }
 
@@ -222,12 +222,16 @@ export class PlacesService {
   }
 
   private getApiKey(): string {
-    const apiKey = process.env.MAPBOX_ACCESS_TOKEN;
+    const apiKey =
+      process.env.MAPBOX_ACCESS_TOKEN ??
+      process.env.MAPBOX_ACCESS_KEY ??
+      process.env.MAPBOX_API_KEY;
+
     if (!apiKey) {
       throw new HttpException(
         {
           code: 'MISSING_CONFIGURATION',
-          message: 'MAPBOX_ACCESS_TOKEN is required.',
+          message: 'MAPBOX_ACCESS_TOKEN, MAPBOX_ACCESS_KEY, or MAPBOX_API_KEY is required.',
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
       );

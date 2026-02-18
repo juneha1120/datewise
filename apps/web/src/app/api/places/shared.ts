@@ -1,0 +1,46 @@
+import { NextResponse } from 'next/server';
+
+function normalizeBaseUrl(value: string): string {
+  return value.replace(/\/+$/u, '');
+}
+
+function getBaseUrlCandidates(): string[] {
+  const configuredServerUrl = process.env.API_INTERNAL_BASE_URL?.trim();
+  const configuredPublicUrl = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();
+
+  const candidates = [
+    configuredServerUrl,
+    configuredPublicUrl,
+    'http://localhost:3001',
+    'http://127.0.0.1:3001',
+    'http://host.docker.internal:3001',
+  ]
+    .filter((value): value is string => Boolean(value))
+    .map((value) => normalizeBaseUrl(value));
+
+  return [...new Set(candidates)];
+}
+
+export async function proxyToApi(path: string): Promise<NextResponse> {
+  let lastError: unknown;
+
+  for (const baseUrl of getBaseUrlCandidates()) {
+    try {
+      const response = await fetch(`${baseUrl}${path}`, { cache: 'no-store' });
+      const body = (await response.json()) as unknown;
+      return NextResponse.json(body, { status: response.status });
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  return NextResponse.json(
+    {
+      code: 'UPSTREAM_UNREACHABLE',
+      message: 'Unable to reach API from web server.',
+      details: String(lastError ?? 'Unknown upstream error'),
+      triedBaseUrls: getBaseUrlCandidates(),
+    },
+    { status: 502 },
+  );
+}
