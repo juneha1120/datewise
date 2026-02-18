@@ -10,15 +10,25 @@
     "sourceMap": true,
     "outDir": "./dist",
     "baseUrl": "./",
-    "paths": {
-      "@datewise/shared": ["../../packages/shared/src/index.ts"]
-    },
     "incremental": true,
     "strict": true,
     "skipLibCheck": true,
     "moduleResolution": "node",
-    "types": ["node"]
+    "types": [
+      "node"
+    ],
+    "rootDir": "./src",
+    "paths": {
+      "@datewise/shared": [
+        "../../packages/shared/dist/index.d.ts"
+      ]
+    }
   },
-  "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist"]
+  "include": [
+    "src/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
 }

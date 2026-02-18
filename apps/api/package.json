@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "nest start --watch",
+    "dev": "npm run build --workspace @datewise/shared && nest start --watch",
     "build": "nest build",
     "start": "node dist/main.js",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "npm run build --workspace @datewise/shared && tsc --noEmit",
     "test": "npm run build && node --test dist/**/*.spec.js"
   },
   "dependencies": {
