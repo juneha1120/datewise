@@ -5,7 +5,6 @@ import { loadApiEnvironment } from './env';
 
 loadApiEnvironment();
 
-
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.enableCors();
