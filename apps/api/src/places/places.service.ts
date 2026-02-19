@@ -205,7 +205,7 @@ export class PlacesService {
       autocomplete: 'true',
       limit: '8',
       proximity: '103.8198,1.3521',
-      types: 'address,street,neighborhood,locality,place,poi',
+      types: 'address,street,neighborhood,locality,place',
     });
   }
 
@@ -223,6 +223,7 @@ export class PlacesService {
 
   private getApiKey(): string {
     const apiKey = process.env.MAPBOX_ACCESS_TOKEN;
+
     if (!apiKey) {
       throw new HttpException(
         {

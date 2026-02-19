@@ -1,7 +1,7 @@
 declare const test: (name: string, fn: () => void | Promise<void>) => void;
 import * as assert from 'assert/strict';
 import { HttpException, HttpStatus } from '@nestjs/common';
-import { mapboxAutocompleteToResponse, mapboxDetailsToResponse } from './places.service';
+import { PlacesService, mapboxAutocompleteToResponse, mapboxDetailsToResponse } from './places.service';
 
 test('mapboxAutocompleteToResponse normalizes suggestions and enforces SG filtering', () => {
   const response = mapboxAutocompleteToResponse({
@@ -121,4 +121,17 @@ test('mapboxAutocompleteToResponse maps normalization errors to BAD_GATEWAY Http
       return true;
     },
   );
+});
+
+
+test('buildAutocompleteUrl uses Mapbox-supported types', () => {
+  process.env.MAPBOX_ACCESS_TOKEN = 'test-token';
+  const service = new PlacesService() as unknown as {
+    buildAutocompleteUrl: (query: string) => string;
+  };
+
+  const url = service.buildAutocompleteUrl('orchard');
+  const parsed = new URL(url);
+
+  assert.equal(parsed.searchParams.get('types'), 'address,street,neighborhood,locality,place');
 });
