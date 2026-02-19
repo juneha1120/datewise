@@ -1,32 +1,17 @@
 declare const test: (name: string, fn: () => void | Promise<void>) => void;
 import * as assert from 'assert/strict';
 import { HttpException, HttpStatus } from '@nestjs/common';
-import { PlacesService, mapboxAutocompleteToResponse, mapboxDetailsToResponse } from './places.service';
+import { PlacesService, googleAutocompleteToResponse, googleDetailsToResponse } from './places.service';
 
-test('mapboxAutocompleteToResponse normalizes suggestions and enforces SG filtering', () => {
-  const response = mapboxAutocompleteToResponse({
-    features: [
+test('googleAutocompleteToResponse normalizes suggestions', () => {
+  const response = googleAutocompleteToResponse({
+    suggestions: [
       {
-        properties: {
-          mapbox_id: 'mbx.sg.1',
-          name: 'Marina Bay Sands',
-          full_address: '10 Bayfront Ave, Singapore',
-          context: {
-            country: {
-              country_code: 'SG',
-            },
-          },
-        },
-      },
-      {
-        properties: {
-          mapbox_id: 'mbx.us.1',
-          name: 'Not In Singapore',
-          full_address: 'Somewhere else',
-          context: {
-            country: {
-              country_code: 'US',
-            },
+        placePrediction: {
+          placeId: 'g.sg.1',
+          structuredFormat: {
+            mainText: { text: 'Marina Bay Sands' },
+            secondaryText: { text: 'Singapore' },
           },
         },
       },
@@ -36,75 +21,83 @@ test('mapboxAutocompleteToResponse normalizes suggestions and enforces SG filter
   assert.deepStrictEqual(response, {
     suggestions: [
       {
-        placeId: 'mbx.sg.1',
+        placeId: 'g.sg.1',
         primaryText: 'Marina Bay Sands',
-        secondaryText: '10 Bayfront Ave, Singapore',
+        secondaryText: 'Singapore',
       },
     ],
   });
 });
 
-test('mapboxDetailsToResponse normalizes place details payload', () => {
-  const response = mapboxDetailsToResponse({
-    features: [
+test('googleDetailsToResponse normalizes place details payload', () => {
+  const response = googleDetailsToResponse({
+    id: 'g.sg.2',
+    displayName: { text: 'Clarke Quay MRT' },
+    formattedAddress: '2 Eu Tong Sen St, Singapore',
+    location: {
+      latitude: 1.2881,
+      longitude: 103.8463,
+    },
+    types: ['train_station'],
+    addressComponents: [
       {
-        properties: {
-          mapbox_id: 'mbx.sg.2',
-          name: 'Clarke Quay MRT',
-          full_address: '2 Eu Tong Sen St, Singapore',
-          feature_type: 'poi',
-          context: {
-            country: {
-              country_code: 'sg',
-            },
-          },
-        },
-        geometry: {
-          coordinates: [103.8463, 1.2881],
-        },
+        shortText: 'SG',
+        types: ['country', 'political'],
       },
     ],
   });
 
   assert.deepStrictEqual(response, {
-    placeId: 'mbx.sg.2',
+    placeId: 'g.sg.2',
     name: 'Clarke Quay MRT',
     formattedAddress: '2 Eu Tong Sen St, Singapore',
     lat: 1.2881,
     lng: 103.8463,
-    types: ['poi'],
+    types: ['train_station'],
   });
 });
 
-test('mapboxAutocompleteToResponse filters features without SG country metadata', () => {
-  const response = mapboxAutocompleteToResponse({
-    features: [
-      {
-        properties: {
-          mapbox_id: 'mbx.unknown.1',
-          name: 'Unknown Country Feature',
-          full_address: 'Unknown address',
-        },
-      },
-    ],
-  });
-
-  assert.deepStrictEqual(response, { suggestions: [] });
-});
-
-test('mapboxAutocompleteToResponse maps normalization errors to BAD_GATEWAY HttpException', () => {
+test('googleDetailsToResponse rejects non-Singapore results', () => {
   assert.throws(
     () =>
-      mapboxAutocompleteToResponse({
-        features: [
+      googleDetailsToResponse({
+        id: 'g.us.1',
+        displayName: { text: 'Some Place' },
+        formattedAddress: 'US Address',
+        location: {
+          latitude: 37.7749,
+          longitude: -122.4194,
+        },
+        types: ['establishment'],
+        addressComponents: [
           {
-            properties: {
-              mapbox_id: 'mbx.sg.3',
-              context: {
-                country: {
-                  country_code: 'SG',
-                },
-              },
+            shortText: 'US',
+            types: ['country', 'political'],
+          },
+        ],
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof HttpException);
+      if (!(error instanceof HttpException)) {
+        return false;
+      }
+
+      assert.equal(error.getStatus(), HttpStatus.BAD_GATEWAY);
+      const response = error.getResponse() as Record<string, unknown>;
+      assert.equal(response.code, 'EXTERNAL_SERVICE_ERROR');
+      return true;
+    },
+  );
+});
+
+test('googleAutocompleteToResponse maps normalization errors to BAD_GATEWAY HttpException', () => {
+  assert.throws(
+    () =>
+      googleAutocompleteToResponse({
+        suggestions: [
+          {
+            placePrediction: {
+              placeId: 'g.sg.3',
             },
           },
         ],
@@ -123,15 +116,35 @@ test('mapboxAutocompleteToResponse maps normalization errors to BAD_GATEWAY Http
   );
 });
 
-
-test('buildAutocompleteUrl uses Mapbox-supported types', () => {
-  process.env.MAPBOX_ACCESS_TOKEN = 'test-token';
+test('details call sets Google field mask and languageCode', () => {
+  process.env.GOOGLE_MAPS_API_KEY = 'test-token';
   const service = new PlacesService() as unknown as {
-    buildAutocompleteUrl: (query: string) => string;
+    details: (placeId: string) => Promise<unknown>;
   };
 
-  const url = service.buildAutocompleteUrl('orchard');
-  const parsed = new URL(url);
+  const originalFetch = global.fetch;
+  const calls: Array<{ url: string; init?: RequestInit }> = [];
 
-  assert.equal(parsed.searchParams.get('types'), 'address,street,neighborhood,locality,place');
+  global.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
+    calls.push({ url: String(input), init });
+
+    return new Response(
+      JSON.stringify({
+        id: 'test',
+        displayName: { text: 'Test Place' },
+        formattedAddress: 'Singapore',
+        location: { latitude: 1.3, longitude: 103.8 },
+        types: ['establishment'],
+        addressComponents: [{ shortText: 'SG', types: ['country'] }],
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    );
+  }) as typeof fetch;
+
+  return service.details('abc123').then(() => {
+    global.fetch = originalFetch;
+    assert.equal(calls.length, 1);
+    assert.ok(calls[0].url.includes('/places/abc123?languageCode=en'));
+    assert.equal((calls[0].init?.headers as Record<string, string>)['X-Goog-Api-Key'], 'test-token');
+  });
 });
