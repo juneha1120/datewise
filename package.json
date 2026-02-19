@@ -8,10 +8,9 @@
   ],
   "scripts": {
     "dev": "npm run dev:api & npm run dev:web & wait",
-    "dev:web": "npm run dev:api & npm run dev:web:only & wait",
+    "dev:web": "npm run dev --workspace @datewise/web",
     "dev:api": "npm run dev --workspace @datewise/api",
     "build": "npm run build --workspace @datewise/shared && npm run build --workspace @datewise/api && npm run build --workspace @datewise/web",
-    "typecheck": "npm run typecheck --workspaces --if-present",
-    "dev:web:only": "npm run dev --workspace @datewise/web"
+    "typecheck": "npm run typecheck --workspaces --if-present"
   }
 }
