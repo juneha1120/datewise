@@ -9,55 +9,55 @@ import { z } from 'zod';
 import { CacheStore, InMemoryCacheStore } from './cache';
 import { fetchJsonWithRetry } from './http';
 
-const MAPBOX_SG_COUNTRY_CODE = 'sg';
+const SINGAPORE_COUNTRY_CODE = 'SG';
+const GOOGLE_API_BASE = 'https://places.googleapis.com/v1';
 
-const MapboxContextCountrySchema = z
-  .object({
-    country_code: z.string().optional(),
-  })
-  .optional();
-
-const MapboxFeatureSchema = z.object({
-  id: z.string().optional(),
-  properties: z
-    .object({
-      mapbox_id: z.string().min(1),
-      name: z.string().min(1).optional(),
-      full_address: z.string().optional(),
-      place_formatted: z.string().optional(),
-      feature_type: z.string().optional(),
-      context: z
+const GoogleAutocompleteResponseSchema = z.object({
+  suggestions: z.array(
+    z.object({
+      placePrediction: z
         .object({
-          country: MapboxContextCountrySchema,
+          placeId: z.string().min(1),
+          text: z
+            .object({
+              text: z.string().min(1),
+            })
+            .optional(),
+          structuredFormat: z
+            .object({
+              mainText: z.object({ text: z.string().min(1) }).optional(),
+              secondaryText: z.object({ text: z.string().min(1) }).optional(),
+            })
+            .optional(),
         })
         .optional(),
-    })
-    .optional(),
-  geometry: z
-    .object({
-      coordinates: z.tuple([z.number(), z.number()]),
-    })
-    .optional(),
-  name: z.string().optional(),
-  place_name: z.string().optional(),
-  place_formatted: z.string().optional(),
+    }),
+  ),
 });
 
-const MAPBOX_AUTOCOMPLETE_RESPONSE_SCHEMA = z.object({
-  features: z.array(MapboxFeatureSchema),
+const GooglePlaceDetailsResponseSchema = z.object({
+  id: z.string().min(1),
+  displayName: z.object({ text: z.string().min(1) }).optional(),
+  formattedAddress: z.string().min(1).optional(),
+  location: z.object({ latitude: z.number(), longitude: z.number() }).optional(),
+  types: z.array(z.string()).default([]),
+  addressComponents: z
+    .array(
+      z.object({
+        shortText: z.string().optional(),
+        types: z.array(z.string()).default([]),
+      }),
+    )
+    .default([]),
 });
 
-const MAPBOX_DETAILS_RESPONSE_SCHEMA = z.object({
-  features: z.array(MapboxFeatureSchema).min(1),
-});
-
-export function mapboxAutocompleteToResponse(payload: unknown): PlacesAutocompleteResponse {
-  const parsed = MAPBOX_AUTOCOMPLETE_RESPONSE_SCHEMA.safeParse(payload);
+export function googleAutocompleteToResponse(payload: unknown): PlacesAutocompleteResponse {
+  const parsed = GoogleAutocompleteResponseSchema.safeParse(payload);
   if (!parsed.success) {
     throw new HttpException(
       {
         code: 'INVALID_EXTERNAL_RESPONSE',
-        message: 'Invalid autocomplete response from Mapbox.',
+        message: 'Invalid autocomplete response from Google Places.',
         details: parsed.error.flatten(),
       },
       HttpStatus.BAD_GATEWAY,
@@ -65,25 +65,31 @@ export function mapboxAutocompleteToResponse(payload: unknown): PlacesAutocomple
   }
 
   const normalized = PlacesAutocompleteResponseSchema.safeParse({
-    suggestions: parsed.data.features
-      .filter((feature) => isSingaporeFeature(feature))
-      .map((feature) => ({
-        placeId: feature.properties?.mapbox_id ?? feature.id ?? '',
-        primaryText: feature.properties?.name ?? feature.name ?? '',
-        secondaryText:
-          feature.properties?.full_address ??
-          feature.place_formatted ??
-          feature.properties?.place_formatted ??
-          feature.place_name ??
-          '',
-      })),
+    suggestions: parsed.data.suggestions
+      .map((suggestion) => suggestion.placePrediction)
+      .filter((prediction): prediction is NonNullable<typeof prediction> => Boolean(prediction))
+      .map((prediction) => {
+        const primaryText =
+          prediction.structuredFormat?.mainText?.text ??
+          prediction.text?.text ??
+          prediction.structuredFormat?.secondaryText?.text ??
+          '';
+
+        const secondaryText = prediction.structuredFormat?.secondaryText?.text ?? '';
+
+        return {
+          placeId: prediction.placeId,
+          primaryText,
+          secondaryText,
+        };
+      }),
   });
 
   if (!normalized.success) {
     throw new HttpException(
       {
         code: 'INVALID_EXTERNAL_RESPONSE',
-        message: 'Invalid autocomplete response from Mapbox.',
+        message: 'Invalid autocomplete response from Google Places.',
         details: normalized.error.flatten(),
       },
       HttpStatus.BAD_GATEWAY,
@@ -93,61 +99,53 @@ export function mapboxAutocompleteToResponse(payload: unknown): PlacesAutocomple
   return normalized.data;
 }
 
-export function mapboxDetailsToResponse(payload: unknown): PlaceDetailsResponse {
-  const parsed = MAPBOX_DETAILS_RESPONSE_SCHEMA.safeParse(payload);
+export function googleDetailsToResponse(payload: unknown): PlaceDetailsResponse {
+  const parsed = GooglePlaceDetailsResponseSchema.safeParse(payload);
   if (!parsed.success) {
     throw new HttpException(
       {
         code: 'INVALID_EXTERNAL_RESPONSE',
-        message: 'Invalid place details response from Mapbox.',
+        message: 'Invalid place details response from Google Places.',
         details: parsed.error.flatten(),
       },
       HttpStatus.BAD_GATEWAY,
     );
   }
 
-  const [feature] = parsed.data.features;
-  if (!isSingaporeFeature(feature)) {
+  if (!isSingaporeAddress(parsed.data.addressComponents)) {
     throw new HttpException(
       {
         code: 'EXTERNAL_SERVICE_ERROR',
-        message: 'Mapbox details result is outside Singapore.',
+        message: 'Google place details result is outside Singapore.',
       },
       HttpStatus.BAD_GATEWAY,
     );
   }
 
-  const coordinates = feature.geometry?.coordinates;
-  if (!coordinates) {
+  if (!parsed.data.location) {
     throw new HttpException(
       {
         code: 'INVALID_EXTERNAL_RESPONSE',
-        message: 'Mapbox place details missing geometry coordinates.',
+        message: 'Google place details missing location.',
       },
       HttpStatus.BAD_GATEWAY,
     );
   }
 
-  const [lng, lat] = coordinates;
   const normalized = PlaceDetailsResponseSchema.safeParse({
-    placeId: feature.properties?.mapbox_id ?? feature.id ?? '',
-    name: feature.properties?.name ?? feature.name ?? '',
-    formattedAddress:
-      feature.properties?.full_address ??
-      feature.place_formatted ??
-      feature.properties?.place_formatted ??
-      feature.place_name ??
-      '',
-    lat,
-    lng,
-    types: [feature.properties?.feature_type ?? 'place'],
+    placeId: parsed.data.id,
+    name: parsed.data.displayName?.text ?? parsed.data.formattedAddress ?? '',
+    formattedAddress: parsed.data.formattedAddress ?? '',
+    lat: parsed.data.location.latitude,
+    lng: parsed.data.location.longitude,
+    types: parsed.data.types,
   });
 
   if (!normalized.success) {
     throw new HttpException(
       {
         code: 'INVALID_EXTERNAL_RESPONSE',
-        message: 'Invalid place details response from Mapbox.',
+        message: 'Invalid place details response from Google Places.',
         details: normalized.error.flatten(),
       },
       HttpStatus.BAD_GATEWAY,
@@ -157,11 +155,12 @@ export function mapboxDetailsToResponse(payload: unknown): PlaceDetailsResponse 
   return normalized.data;
 }
 
-function isSingaporeFeature(feature: z.infer<typeof MapboxFeatureSchema>): boolean {
-  const countryCode = feature.properties?.context?.country?.country_code;
-  if (!countryCode) return false;
-
-  return countryCode.toLowerCase() === MAPBOX_SG_COUNTRY_CODE;
+function isSingaporeAddress(
+  components: Array<{ shortText?: string; types: string[] }>,
+): boolean {
+  return components.some((component) =>
+    component.types.includes('country') && component.shortText?.toUpperCase() === SINGAPORE_COUNTRY_CODE,
+  );
 }
 
 @Injectable()
@@ -175,9 +174,28 @@ export class PlacesService {
       return cached;
     }
 
-    const response = await fetchJsonWithRetry<unknown>(this.buildAutocompleteUrl(query));
-    const normalized = mapboxAutocompleteToResponse(response);
+    const response = await fetchJsonWithRetry<unknown>(`${GOOGLE_API_BASE}/places:autocomplete`, {
+      method: 'POST',
+      headers: this.buildJsonHeaders(
+        'suggestions.placePrediction.placeId,suggestions.placePrediction.text.text,suggestions.placePrediction.structuredFormat.mainText.text,suggestions.placePrediction.structuredFormat.secondaryText.text',
+      ),
+      body: JSON.stringify({
+        input: query,
+        includedRegionCodes: ['sg'],
+        languageCode: 'en',
+        locationBias: {
+          circle: {
+            center: {
+              latitude: 1.3521,
+              longitude: 103.8198,
+            },
+            radius: 50_000,
+          },
+        },
+      }),
+    });
 
+    const normalized = googleAutocompleteToResponse(response);
     this.cache.set(cacheKey, normalized, 60_000);
     return normalized;
   }
@@ -189,49 +207,34 @@ export class PlacesService {
       return cached;
     }
 
-    const response = await fetchJsonWithRetry<unknown>(this.buildDetailsUrl(placeId));
-    const normalized = mapboxDetailsToResponse(response);
+    const response = await fetchJsonWithRetry<unknown>(
+      `${GOOGLE_API_BASE}/places/${encodeURIComponent(placeId)}?languageCode=en`,
+      {
+        headers: this.buildJsonHeaders('id,displayName.text,formattedAddress,location,types,addressComponents.shortText,addressComponents.types'),
+      },
+    );
 
+    const normalized = googleDetailsToResponse(response);
     this.cache.set(cacheKey, normalized, 5 * 60_000);
     return normalized;
   }
 
-  private buildAutocompleteUrl(query: string): string {
-    return this.buildUrl('https://api.mapbox.com/search/geocode/v6/forward', {
-      q: query,
-      access_token: this.getApiKey(),
-      country: 'SG',
-      language: 'en',
-      autocomplete: 'true',
-      limit: '8',
-      proximity: '103.8198,1.3521',
-      types: 'address,street,neighborhood,locality,place',
-    });
-  }
-
-  private buildDetailsUrl(placeId: string): string {
-    return this.buildUrl(`https://api.mapbox.com/search/geocode/v6/retrieve/${encodeURIComponent(placeId)}`, {
-      access_token: this.getApiKey(),
-      language: 'en',
-    });
-  }
-
-  private buildUrl(baseUrl: string, params: Record<string, string>): string {
-    const searchParams = new URLSearchParams(params);
-    return `${baseUrl}?${searchParams.toString()}`;
+  private buildJsonHeaders(fieldMask: string): Record<string, string> {
+    return {
+      'Content-Type': 'application/json',
+      'X-Goog-Api-Key': this.getApiKey(),
+      'X-Goog-FieldMask': fieldMask,
+    };
   }
 
   private getApiKey(): string {
-    const apiKey =
-      process.env.MAPBOX_ACCESS_TOKEN ??
-      process.env.MAPBOX_ACCESS_KEY ??
-      process.env.MAPBOX_API_KEY;
+    const apiKey = process.env.GOOGLE_MAPS_API_KEY ?? process.env.GOOGLE_API_KEY;
 
     if (!apiKey) {
       throw new HttpException(
         {
           code: 'MISSING_CONFIGURATION',
-          message: 'MAPBOX_ACCESS_TOKEN, MAPBOX_ACCESS_KEY, or MAPBOX_API_KEY is required.',
+          message: 'GOOGLE_MAPS_API_KEY (or GOOGLE_API_KEY) is required.',
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
       );

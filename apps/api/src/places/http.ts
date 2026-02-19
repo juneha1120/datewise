@@ -5,7 +5,9 @@ const MAX_RETRIES = 2;
 
 const logger = new Logger('HttpClient');
 
-export async function fetchJsonWithRetry<T>(url: string): Promise<T> {
+type RequestOptions = Omit<RequestInit, 'signal'>;
+
+export async function fetchJsonWithRetry<T>(url: string, init?: RequestOptions): Promise<T> {
   let lastError: unknown;
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
@@ -14,12 +16,12 @@ export async function fetchJsonWithRetry<T>(url: string): Promise<T> {
 
     try {
       const response = await fetch(url, {
+        ...init,
         signal: controller.signal,
       });
 
       if (!response.ok) {
-        const body = await response.text();
-        throw new Error(`External places API failed (${response.status}): ${body}`);
+        throw new Error(`External places API failed with status ${response.status}`);
       }
 
       return (await response.json()) as T;

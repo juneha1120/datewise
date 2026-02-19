@@ -81,15 +81,24 @@ async function fetchFromWebApi(path: string): Promise<unknown> {
 }
 
 
-const browserApiBaseCandidates = [
-  process.env.NEXT_PUBLIC_API_BASE_URL?.trim(),
-  'http://localhost:3001',
-  'http://127.0.0.1:3001',
-]
-  .filter((value): value is string => Boolean(value))
-  .map((value) => value.replace(/\/+$/u, ''));
+function getBrowserApiBaseUrls(): string[] {
+  const locationDerivedBaseUrl =
+    typeof window === 'undefined'
+      ? undefined
+      : `${window.location.protocol}//${window.location.hostname}:3001`;
 
-const browserApiBaseUrls = [...new Set(browserApiBaseCandidates)];
+  const browserApiBaseCandidates = [
+    process.env.NEXT_PUBLIC_API_BASE_URL?.trim(),
+    locationDerivedBaseUrl,
+    'http://localhost:3001',
+    'http://127.0.0.1:3001',
+    'http://[::1]:3001',
+  ]
+    .filter((value): value is string => Boolean(value))
+    .map((value) => value.replace(/\/+$/u, ''));
+
+  return [...new Set(browserApiBaseCandidates)];
+}
 
 function toBackendPath(webApiPath: string): string {
   return webApiPath.replace(/^\/api\/places\//u, '/v1/places/');
@@ -98,8 +107,9 @@ function toBackendPath(webApiPath: string): string {
 async function fetchFromBrowserApi(path: string): Promise<unknown> {
   const backendPath = toBackendPath(path);
   let lastError: Error | null = null;
+  const attempted: string[] = [];
 
-  for (const baseUrl of browserApiBaseUrls) {
+  for (const baseUrl of getBrowserApiBaseUrls()) {
     try {
       const response = await fetch(`${baseUrl}${backendPath}`);
       if (!response.ok) {
@@ -120,8 +130,16 @@ async function fetchFromBrowserApi(path: string): Promise<unknown> {
 
       return (await response.json()) as unknown;
     } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error));
+      const normalizedError = error instanceof Error ? error : new Error(String(error));
+      attempted.push(`${baseUrl} -> ${normalizedError.message}`);
+      lastError = normalizedError;
     }
+  }
+
+  if (attempted.length > 0) {
+    throw new Error(
+      `Browser fallback to API failed. Ensure \`npm run dev:api\` is running and reachable on port 3001. Tried: ${attempted.join(' | ')}`,
+    );
   }
 
   throw lastError ?? new Error('Browser fallback to API failed.');

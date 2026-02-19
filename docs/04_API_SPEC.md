@@ -35,7 +35,7 @@ Response
 
 
 Provider notes
-- `/v1/places/autocomplete` and `/v1/places/details` are backed by Mapbox Search (Geocoding API v6).
+- `/v1/places/autocomplete` and `/v1/places/details` are backed by Google Places API (Autocomplete + Place Details).
 - Requests are restricted to Singapore (`country=SG`) with Singapore proximity bias.
 - External calls use timeout <= 5s and max 2 retries.
 
@@ -91,3 +91,5 @@ Returns saved snapshot itinerary
 ## (Phase 2) POST /v1/itineraries/{id}/publish
 ## (Phase 2) POST /v1/public/{id}/like
 ## (Phase 2) GET /v1/public/feed?area=...
+
+- Backend requires `GOOGLE_MAPS_API_KEY` (or `GOOGLE_API_KEY`) in repository root `.env` (or `.env.local`).
