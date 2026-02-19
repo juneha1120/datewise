@@ -12,7 +12,7 @@ if (!(process.env.MAPBOX_ACCESS_TOKEN || process.env.MAPBOX_ACCESS_KEY || proces
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.enableCors();
-  await app.listen(3001);
+  await app.listen(3001, '0.0.0.0');
 }
 
 void bootstrap();

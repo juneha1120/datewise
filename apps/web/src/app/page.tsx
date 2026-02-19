@@ -92,6 +92,7 @@ function getBrowserApiBaseUrls(): string[] {
     locationDerivedBaseUrl,
     'http://localhost:3001',
     'http://127.0.0.1:3001',
+    'http://[::1]:3001',
   ]
     .filter((value): value is string => Boolean(value))
     .map((value) => value.replace(/\/+$/u, ''));

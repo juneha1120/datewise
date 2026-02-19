@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { PlacesAutocompleteQuerySchema } from '@datewise/shared';
 import { proxyToApi } from '../shared';
 
+export const runtime = 'nodejs';
+
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const q = request.nextUrl.searchParams.get('q') ?? '';
   const parsed = PlacesAutocompleteQuerySchema.safeParse({ q });
