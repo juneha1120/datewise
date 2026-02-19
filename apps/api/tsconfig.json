@@ -20,7 +20,7 @@
     "rootDir": "./src",
     "paths": {
       "@datewise/shared": [
-        "../../packages/shared/dist/index.d.ts"
+        "../../packages/shared/src/index.d.ts"
       ]
     }
   },

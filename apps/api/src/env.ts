@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { resolve } from 'node:path';
 
 function parseEnvLine(line: string): [string, string] | null {
   const trimmed = line.replace(/^\uFEFF/u, '').trim();
@@ -19,10 +19,7 @@ function parseEnvLine(line: string): [string, string] | null {
   }
 
   let value = withoutExport.slice(equalsIndex + 1).trim();
-  if (
-    (value.startsWith('"') && value.endsWith('"')) ||
-    (value.startsWith("'") && value.endsWith("'"))
-  ) {
+  if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
     value = value.slice(1, -1);
   }
 
@@ -48,31 +45,10 @@ function loadEnvFile(filePath: string): void {
   }
 }
 
-function buildEnvCandidates(): string[] {
-  const cwd = process.cwd();
-  const here = __dirname;
-  const parent = dirname(here);
-
-  const candidates = [
-    resolve(cwd, '.env'),
-    resolve(cwd, '.env.local'),
-    resolve(cwd, 'apps/api/.env'),
-    resolve(cwd, 'apps/api/.env.local'),
-    resolve(cwd, '../../.env'),
-    resolve(cwd, '../../.env.local'),
-    resolve(parent, '.env'),
-    resolve(parent, '.env.local'),
-    resolve(parent, '../.env'),
-    resolve(parent, '../.env.local'),
-    resolve(parent, '../../.env'),
-    resolve(parent, '../../.env.local'),
-  ];
-
-  return [...new Set(candidates)];
-}
-
 export function loadApiEnvironment(): void {
-  for (const envPath of buildEnvCandidates()) {
+  const cwd = process.cwd();
+
+  for (const envPath of [resolve(cwd, '.env'), resolve(cwd, '.env.local')]) {
     loadEnvFile(envPath);
   }
 }
