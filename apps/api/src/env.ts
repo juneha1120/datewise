@@ -1,6 +1,23 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+function findRepoRoot(startDir: string): string {
+  let currentDir = startDir;
+
+  while (true) {
+    if (existsSync(resolve(currentDir, '.git'))) {
+      return currentDir;
+    }
+
+    const parentDir = resolve(currentDir, '..');
+    if (parentDir === currentDir) {
+      return startDir;
+    }
+
+    currentDir = parentDir;
+  }
+}
+
 function parseEnvLine(line: string): [string, string] | null {
   const trimmed = line.replace(/^\uFEFF/u, '').trim();
   if (!trimmed || trimmed.startsWith('#')) {
