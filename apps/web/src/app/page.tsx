@@ -98,6 +98,7 @@ function toBackendPath(webApiPath: string): string {
 async function fetchFromBrowserApi(path: string): Promise<unknown> {
   const backendPath = toBackendPath(path);
   let lastError: Error | null = null;
+  const attempted: string[] = [];
 
   for (const baseUrl of browserApiBaseUrls) {
     try {
@@ -120,8 +121,16 @@ async function fetchFromBrowserApi(path: string): Promise<unknown> {
 
       return (await response.json()) as unknown;
     } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error));
+      const normalizedError = error instanceof Error ? error : new Error(String(error));
+      attempted.push(`${baseUrl} -> ${normalizedError.message}`);
+      lastError = normalizedError;
     }
+  }
+
+  if (attempted.length > 0) {
+    throw new Error(
+      `Browser fallback to API failed. Ensure \`npm run dev:api\` is running and reachable on port 3001. Tried: ${attempted.join(' | ')}`,
+    );
   }
 
   throw lastError ?? new Error('Browser fallback to API failed.');
