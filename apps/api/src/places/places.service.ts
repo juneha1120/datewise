@@ -222,16 +222,13 @@ export class PlacesService {
   }
 
   private getApiKey(): string {
-    const apiKey =
-      process.env.MAPBOX_ACCESS_TOKEN ??
-      process.env.MAPBOX_ACCESS_KEY ??
-      process.env.MAPBOX_API_KEY;
+    const apiKey = process.env.MAPBOX_ACCESS_TOKEN;
 
     if (!apiKey) {
       throw new HttpException(
         {
           code: 'MISSING_CONFIGURATION',
-          message: 'MAPBOX_ACCESS_TOKEN, MAPBOX_ACCESS_KEY, or MAPBOX_API_KEY is required.',
+          message: 'MAPBOX_ACCESS_TOKEN is required.',
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
