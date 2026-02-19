@@ -3,11 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "nest start --watch",
-    "build": "nest build",
+    "dev": "npm run clean && npm run build --workspace @datewise/shared && nest start --watch",
+    "build": "npm run clean && nest build",
     "start": "node dist/main.js",
-    "typecheck": "tsc --noEmit",
-    "test": "npm run build && node --test dist/**/*.spec.js"
+    "typecheck": "npm run build --workspace @datewise/shared && tsc --noEmit",
+    "test": "npm run build && node --test dist/**/*.spec.js",
+    "clean": "node -e \"const fs=require('node:fs'); for (const p of ['dist','tsconfig.tsbuildinfo','tsconfig.build.tsbuildinfo']) fs.rmSync(p,{ recursive: true, force: true });\""
   },
   "dependencies": {
     "@datewise/shared": "0.1.0",
