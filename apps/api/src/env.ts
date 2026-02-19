@@ -1,23 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-function findRepoRoot(startDir: string): string {
-  let currentDir = startDir;
-
-  while (true) {
-    if (existsSync(resolve(currentDir, '.git'))) {
-      return currentDir;
-    }
-
-    const parentDir = resolve(currentDir, '..');
-    if (parentDir === currentDir) {
-      return startDir;
-    }
-
-    currentDir = parentDir;
-  }
-}
-
 function parseEnvLine(line: string): [string, string] | null {
   const trimmed = line.replace(/^\uFEFF/u, '').trim();
   if (!trimmed || trimmed.startsWith('#')) {
@@ -64,8 +47,16 @@ function loadEnvFile(filePath: string): void {
 
 export function loadApiEnvironment(): void {
   const cwd = process.cwd();
+  const repoRoot = resolve(__dirname, '../../..');
 
-  for (const envPath of [resolve(cwd, '.env'), resolve(cwd, '.env.local')]) {
+  const candidates = [
+    resolve(repoRoot, '.env'),
+    resolve(repoRoot, '.env.local'),
+    resolve(cwd, '.env'),
+    resolve(cwd, '.env.local'),
+  ];
+
+  for (const envPath of [...new Set(candidates)]) {
     loadEnvFile(envPath);
   }
 }
