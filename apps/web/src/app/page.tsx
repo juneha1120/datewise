@@ -81,15 +81,23 @@ async function fetchFromWebApi(path: string): Promise<unknown> {
 }
 
 
-const browserApiBaseCandidates = [
-  process.env.NEXT_PUBLIC_API_BASE_URL?.trim(),
-  'http://localhost:3001',
-  'http://127.0.0.1:3001',
-]
-  .filter((value): value is string => Boolean(value))
-  .map((value) => value.replace(/\/+$/u, ''));
+function getBrowserApiBaseUrls(): string[] {
+  const locationDerivedBaseUrl =
+    typeof window === 'undefined'
+      ? undefined
+      : `${window.location.protocol}//${window.location.hostname}:3001`;
 
-const browserApiBaseUrls = [...new Set(browserApiBaseCandidates)];
+  const browserApiBaseCandidates = [
+    process.env.NEXT_PUBLIC_API_BASE_URL?.trim(),
+    locationDerivedBaseUrl,
+    'http://localhost:3001',
+    'http://127.0.0.1:3001',
+  ]
+    .filter((value): value is string => Boolean(value))
+    .map((value) => value.replace(/\/+$/u, ''));
+
+  return [...new Set(browserApiBaseCandidates)];
+}
 
 function toBackendPath(webApiPath: string): string {
   return webApiPath.replace(/^\/api\/places\//u, '/v1/places/');
@@ -100,7 +108,7 @@ async function fetchFromBrowserApi(path: string): Promise<unknown> {
   let lastError: Error | null = null;
   const attempted: string[] = [];
 
-  for (const baseUrl of browserApiBaseUrls) {
+  for (const baseUrl of getBrowserApiBaseUrls()) {
     try {
       const response = await fetch(`${baseUrl}${backendPath}`);
       if (!response.ok) {

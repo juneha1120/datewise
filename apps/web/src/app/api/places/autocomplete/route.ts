@@ -17,5 +17,5 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  return proxyToApi(`/v1/places/autocomplete?q=${encodeURIComponent(parsed.data.q)}`);
+  return proxyToApi(request, `/v1/places/autocomplete?q=${encodeURIComponent(parsed.data.q)}`);
 }
