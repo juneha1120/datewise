@@ -228,13 +228,13 @@ export class PlacesService {
   }
 
   private getApiKey(): string {
-    const apiKey = process.env.GOOGLE_MAPS_API_KEY ?? process.env.GOOGLE_API_KEY;
+    const apiKey = process.env.GOOGLE_MAPS_API_KEY;
 
     if (!apiKey) {
       throw new HttpException(
         {
           code: 'MISSING_CONFIGURATION',
-          message: 'GOOGLE_MAPS_API_KEY (or GOOGLE_API_KEY) is required.',
+          message: 'GOOGLE_MAPS_API_KEY is required.',
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
       );

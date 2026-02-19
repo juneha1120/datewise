@@ -92,4 +92,4 @@ Returns saved snapshot itinerary
 ## (Phase 2) POST /v1/public/{id}/like
 ## (Phase 2) GET /v1/public/feed?area=...
 
-- Backend requires `GOOGLE_MAPS_API_KEY` (or `GOOGLE_API_KEY`) in repository root `.env` (or `.env.local`).
+- Backend requires `GOOGLE_MAPS_API_KEY` in repository root `.env` (or `.env.local`).
