@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.GenerateItineraryResponseSchema = exports.ItineraryTotalsSchema = exports.ItineraryLegSchema = exports.ItineraryStopSchema = exports.GenerateItineraryRequestSchema = exports.GenerateItineraryOriginSchema = exports.PlaceDetailsResponseSchema = exports.PlaceDetailsQuerySchema = exports.PlacesAutocompleteResponseSchema = exports.PlacesSuggestionSchema = exports.PlacesAutocompleteQuerySchema = exports.PlanRequestSchema = exports.VibeSchema = void 0;
+exports.GenerateItineraryResponseSchema = exports.ItineraryTotalsSchema = exports.ItineraryLegSchema = exports.ItineraryStopSchema = exports.GenerateItineraryRequestSchema = exports.GenerateItineraryOriginSchema = exports.TransportSchema = exports.AvoidPreferenceSchema = exports.FoodPreferenceSchema = exports.VibeOptionSchema = exports.DateStyleOptionSchema = exports.BudgetSchema = exports.PlaceDetailsResponseSchema = exports.PlaceDetailsQuerySchema = exports.PlacesAutocompleteResponseSchema = exports.PlacesSuggestionSchema = exports.PlacesAutocompleteQuerySchema = exports.PlanRequestSchema = exports.VibeSchema = void 0;
 const zod_1 = require("zod");
 exports.VibeSchema = zod_1.z.enum(['chill', 'active', 'romantic', 'adventurous']);
 exports.PlanRequestSchema = zod_1.z.object({
@@ -34,18 +34,24 @@ exports.PlaceDetailsResponseSchema = zod_1.z.object({
 });
 const DateSchema = zod_1.z.string().regex(/^\d{4}-\d{2}-\d{2}$/u, 'Invalid date format. Use YYYY-MM-DD.');
 const TimeSchema = zod_1.z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/u, 'Invalid time format. Use HH:mm.');
+exports.BudgetSchema = zod_1.z.enum(['$', '$$', '$$$']);
+exports.DateStyleOptionSchema = zod_1.z.enum(['FOOD', 'ACTIVITY', 'EVENT', 'SCENIC', 'SURPRISE']);
+exports.VibeOptionSchema = zod_1.z.enum(['CHILL', 'ACTIVE', 'ROMANTIC', 'ADVENTUROUS']);
+exports.FoodPreferenceSchema = zod_1.z.enum(['VEG', 'HALAL_FRIENDLY', 'NO_ALCOHOL', 'NO_SEAFOOD']);
+exports.AvoidPreferenceSchema = zod_1.z.enum(['OUTDOOR', 'PHYSICAL', 'CROWDED', 'LOUD']);
+exports.TransportSchema = zod_1.z.enum(['MIN_WALK', 'TRANSIT', 'DRIVE_OK', 'WALK_OK']);
 exports.GenerateItineraryOriginSchema = exports.PlaceDetailsResponseSchema;
 exports.GenerateItineraryRequestSchema = zod_1.z.object({
     origin: exports.GenerateItineraryOriginSchema,
     date: DateSchema,
     startTime: TimeSchema,
     durationMin: zod_1.z.number().int().min(30).max(1440),
-    budget: zod_1.z.string().min(1),
-    dateStyle: zod_1.z.string().min(1),
-    vibe: zod_1.z.string().min(1),
-    food: zod_1.z.array(zod_1.z.string().min(1)).optional(),
-    avoid: zod_1.z.array(zod_1.z.string().min(1)).optional(),
-    transport: zod_1.z.string().min(1).optional(),
+    budget: exports.BudgetSchema,
+    dateStyle: zod_1.z.array(exports.DateStyleOptionSchema).min(1),
+    vibe: zod_1.z.array(exports.VibeOptionSchema).min(1),
+    food: zod_1.z.array(exports.FoodPreferenceSchema).default([]),
+    avoid: zod_1.z.array(exports.AvoidPreferenceSchema).default([]),
+    transport: exports.TransportSchema,
 });
 exports.ItineraryStopSchema = zod_1.z.object({
     kind: zod_1.z.enum(['PLACE', 'EVENT']),

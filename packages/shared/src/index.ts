@@ -40,6 +40,13 @@ export const PlaceDetailsResponseSchema = z.object({
 const DateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/u, 'Invalid date format. Use YYYY-MM-DD.');
 const TimeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/u, 'Invalid time format. Use HH:mm.');
 
+export const BudgetSchema = z.enum(['$', '$$', '$$$']);
+export const DateStyleOptionSchema = z.enum(['FOOD', 'ACTIVITY', 'EVENT', 'SCENIC', 'SURPRISE']);
+export const VibeOptionSchema = z.enum(['CHILL', 'ACTIVE', 'ROMANTIC', 'ADVENTUROUS']);
+export const FoodPreferenceSchema = z.enum(['VEG', 'HALAL_FRIENDLY', 'NO_ALCOHOL', 'NO_SEAFOOD']);
+export const AvoidPreferenceSchema = z.enum(['OUTDOOR', 'PHYSICAL', 'CROWDED', 'LOUD']);
+export const TransportSchema = z.enum(['MIN_WALK', 'TRANSIT', 'DRIVE_OK', 'WALK_OK']);
+
 export const GenerateItineraryOriginSchema = PlaceDetailsResponseSchema;
 
 export const GenerateItineraryRequestSchema = z.object({
@@ -47,12 +54,12 @@ export const GenerateItineraryRequestSchema = z.object({
   date: DateSchema,
   startTime: TimeSchema,
   durationMin: z.number().int().min(30).max(1440),
-  budget: z.string().min(1),
-  dateStyle: z.string().min(1),
-  vibe: z.string().min(1),
-  food: z.array(z.string().min(1)).optional(),
-  avoid: z.array(z.string().min(1)).optional(),
-  transport: z.string().min(1).optional(),
+  budget: BudgetSchema,
+  dateStyle: z.array(DateStyleOptionSchema).min(1),
+  vibe: z.array(VibeOptionSchema).min(1),
+  food: z.array(FoodPreferenceSchema).default([]),
+  avoid: z.array(AvoidPreferenceSchema).default([]),
+  transport: TransportSchema,
 });
 
 export const ItineraryStopSchema = z.object({
@@ -100,6 +107,12 @@ export type PlacesSuggestion = z.infer<typeof PlacesSuggestionSchema>;
 export type PlacesAutocompleteResponse = z.infer<typeof PlacesAutocompleteResponseSchema>;
 export type PlaceDetailsQuery = z.infer<typeof PlaceDetailsQuerySchema>;
 export type PlaceDetailsResponse = z.infer<typeof PlaceDetailsResponseSchema>;
+export type Budget = z.infer<typeof BudgetSchema>;
+export type DateStyleOption = z.infer<typeof DateStyleOptionSchema>;
+export type VibeOption = z.infer<typeof VibeOptionSchema>;
+export type FoodPreference = z.infer<typeof FoodPreferenceSchema>;
+export type AvoidPreference = z.infer<typeof AvoidPreferenceSchema>;
+export type Transport = z.infer<typeof TransportSchema>;
 export type GenerateItineraryOrigin = z.infer<typeof GenerateItineraryOriginSchema>;
 export type GenerateItineraryRequest = z.infer<typeof GenerateItineraryRequestSchema>;
 export type ItineraryStop = z.infer<typeof ItineraryStopSchema>;

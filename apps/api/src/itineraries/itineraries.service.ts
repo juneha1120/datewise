@@ -9,6 +9,8 @@ import {
 export class ItinerariesService {
   generateStubItinerary(request: GenerateItineraryRequest): GenerateItineraryResponse {
     const itineraryId = `iti_stub_${request.date}_${request.startTime.replace(':', '')}`;
+    const primaryVibe = request.vibe[0];
+    const primaryDateStyle = request.dateStyle[0];
 
     const stops = [
       {
@@ -21,8 +23,8 @@ export class ItinerariesService {
         rating: 4.5,
         reviewCount: 800,
         priceLevel: 1,
-        tags: ['START', 'SINGAPORE'],
-        reason: `Easy start near ${request.origin.name}.`,
+        tags: ['START', 'SINGAPORE', ...request.vibe, ...request.dateStyle],
+        reason: `Start near ${request.origin.name} with ${primaryVibe.toLowerCase()} ${primaryDateStyle.toLowerCase()} plans.`,
       },
       {
         kind: 'PLACE' as const,
@@ -34,7 +36,7 @@ export class ItinerariesService {
         rating: 4.7,
         reviewCount: 12000,
         priceLevel: 3,
-        tags: [request.vibe.toUpperCase(), request.dateStyle.toUpperCase()],
+        tags: [primaryVibe, primaryDateStyle, `BUDGET_${request.budget}`, request.transport],
         reason: 'Iconic skyline views for a date-night moment.',
       },
       {
@@ -47,8 +49,12 @@ export class ItinerariesService {
         rating: 4.8,
         reviewCount: 9800,
         priceLevel: 2,
-        tags: ['SCENIC', 'RELAXED'],
-        reason: 'Scenic walk and evening ambience to round out the plan.',
+        tags: [
+          'SCENIC',
+          ...request.food.map((selection) => `FOOD_${selection}`),
+          ...request.avoid.map((selection) => `AVOID_${selection}`),
+        ],
+        reason: 'Scenic walk that reflects your selected food and avoid preferences.',
       },
     ];
 

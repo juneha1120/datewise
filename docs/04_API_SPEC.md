@@ -53,12 +53,12 @@ Request
   "date": "YYYY-MM-DD",
   "startTime": "HH:mm",
   "durationMin": 120,
-  "budget": "$|$$|$$$|string",
-  "dateStyle": "FOOD|ACTIVITY|EVENT|SCENIC|SURPRISE|string",
-  "vibe": "CHILL|ACTIVE|ROMANTIC|ADVENTUROUS|string",
+  "budget": "$|$$|$$$",
+  "dateStyle": ["FOOD|ACTIVITY|EVENT|SCENIC|SURPRISE"],
+  "vibe": ["CHILL|ACTIVE|ROMANTIC|ADVENTUROUS"],
   "food": ["VEG","HALAL_FRIENDLY","NO_ALCOHOL","NO_SEAFOOD"],
   "avoid": ["OUTDOOR","PHYSICAL","CROWDED","LOUD"],
-  "transport": "MIN_WALK|TRANSIT|DRIVE_OK|WALK_OK|string"
+  "transport": "MIN_WALK|TRANSIT|DRIVE_OK|WALK_OK"
 }
 
 Response

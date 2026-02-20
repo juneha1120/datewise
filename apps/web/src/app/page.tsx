@@ -2,6 +2,10 @@
 
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import {
+  AvoidPreference,
+  Budget,
+  DateStyleOption,
+  FoodPreference,
   GenerateItineraryRequest,
   GenerateItineraryResponse,
   GenerateItineraryResponseSchema,
@@ -9,7 +13,16 @@ import {
   PlaceDetailsResponseSchema,
   PlacesAutocompleteResponse,
   PlacesAutocompleteResponseSchema,
+  Transport,
+  VibeOption,
 } from '@datewise/shared';
+
+const budgetOptions: Budget[] = ['$', '$$', '$$$'];
+const transportOptions: Transport[] = ['MIN_WALK', 'TRANSIT', 'DRIVE_OK', 'WALK_OK'];
+const dateStyleOptions: DateStyleOption[] = ['FOOD', 'ACTIVITY', 'EVENT', 'SCENIC', 'SURPRISE'];
+const vibeOptions: VibeOption[] = ['CHILL', 'ACTIVE', 'ROMANTIC', 'ADVENTUROUS'];
+const foodOptions: FoodPreference[] = ['VEG', 'HALAL_FRIENDLY', 'NO_ALCOHOL', 'NO_SEAFOOD'];
+const avoidOptions: AvoidPreference[] = ['OUTDOOR', 'PHYSICAL', 'CROWDED', 'LOUD'];
 
 function toFriendlyErrorMessage(prefix: string, error: unknown): string {
   if (error instanceof Error && error.message) {
@@ -23,6 +36,14 @@ type ValidationErrorResponse = {
   message?: string;
   errors?: Array<{ path: string; message: string }>;
 };
+
+function toggleValue<T extends string>(values: T[], value: T): T[] {
+  if (values.includes(value)) {
+    return values.filter((item) => item !== value);
+  }
+
+  return [...values, value];
+}
 
 async function fetchFromWebApi(path: string): Promise<unknown> {
   let response: Response;
@@ -184,12 +205,12 @@ export default function HomePage() {
   const [date, setDate] = useState('2026-01-10');
   const [startTime, setStartTime] = useState('18:00');
   const [durationMin, setDurationMin] = useState('180');
-  const [budget, setBudget] = useState('$$');
-  const [dateStyle, setDateStyle] = useState('SCENIC');
-  const [vibe, setVibe] = useState('ROMANTIC');
-  const [food, setFood] = useState('');
-  const [avoid, setAvoid] = useState('');
-  const [transport, setTransport] = useState('TRANSIT');
+  const [budget, setBudget] = useState<Budget>('$$');
+  const [transport, setTransport] = useState<Transport>('TRANSIT');
+  const [dateStyle, setDateStyle] = useState<DateStyleOption[]>(['SCENIC']);
+  const [vibe, setVibe] = useState<VibeOption[]>(['ROMANTIC']);
+  const [food, setFood] = useState<FoodPreference[]>([]);
+  const [avoid, setAvoid] = useState<AvoidPreference[]>([]);
   const [itinerary, setItinerary] = useState<GenerateItineraryResponse | null>(null);
   const [generateError, setGenerateError] = useState<string | null>(null);
 
@@ -269,6 +290,11 @@ export default function HomePage() {
       return;
     }
 
+    if (dateStyle.length === 0 || vibe.length === 0) {
+      setGenerateError('Pick at least one date style and one vibe.');
+      return;
+    }
+
     setGenerateError(null);
 
     const request: GenerateItineraryRequest = {
@@ -279,9 +305,9 @@ export default function HomePage() {
       budget,
       dateStyle,
       vibe,
-      food: food.trim() ? food.split(',').map((item) => item.trim()).filter(Boolean) : undefined,
-      avoid: avoid.trim() ? avoid.split(',').map((item) => item.trim()).filter(Boolean) : undefined,
-      transport: transport.trim() || undefined,
+      food,
+      avoid,
+      transport,
     };
 
     try {
@@ -353,24 +379,79 @@ export default function HomePage() {
           <label htmlFor="duration">Duration (min)</label>
           <input id="duration" type="number" value={durationMin} onChange={(event) => setDurationMin(event.target.value)} />
           <br />
+
           <label htmlFor="budget">Budget</label>
-          <input id="budget" value={budget} onChange={(event) => setBudget(event.target.value)} />
+          <select id="budget" value={budget} onChange={(event) => setBudget(event.target.value as Budget)}>
+            {budgetOptions.map((option) => (
+              <option key={option} value={option}>{option}</option>
+            ))}
+          </select>
           <br />
-          <label htmlFor="date-style">Date style</label>
-          <input id="date-style" value={dateStyle} onChange={(event) => setDateStyle(event.target.value)} />
-          <br />
-          <label htmlFor="vibe">Vibe</label>
-          <input id="vibe" value={vibe} onChange={(event) => setVibe(event.target.value)} />
-          <br />
-          <label htmlFor="food">Food preferences (comma separated)</label>
-          <input id="food" value={food} onChange={(event) => setFood(event.target.value)} />
-          <br />
-          <label htmlFor="avoid">Avoid (comma separated)</label>
-          <input id="avoid" value={avoid} onChange={(event) => setAvoid(event.target.value)} />
-          <br />
+
           <label htmlFor="transport">Transport</label>
-          <input id="transport" value={transport} onChange={(event) => setTransport(event.target.value)} />
+          <select id="transport" value={transport} onChange={(event) => setTransport(event.target.value as Transport)}>
+            {transportOptions.map((option) => (
+              <option key={option} value={option}>{option}</option>
+            ))}
+          </select>
           <br />
+
+          <fieldset>
+            <legend>Date style (multi-select)</legend>
+            {dateStyleOptions.map((option) => (
+              <label key={option} style={{ display: 'block' }}>
+                <input
+                  type="checkbox"
+                  checked={dateStyle.includes(option)}
+                  onChange={() => setDateStyle((current) => toggleValue(current, option))}
+                />
+                {option}
+              </label>
+            ))}
+          </fieldset>
+
+          <fieldset>
+            <legend>Vibe (multi-select)</legend>
+            {vibeOptions.map((option) => (
+              <label key={option} style={{ display: 'block' }}>
+                <input
+                  type="checkbox"
+                  checked={vibe.includes(option)}
+                  onChange={() => setVibe((current) => toggleValue(current, option))}
+                />
+                {option}
+              </label>
+            ))}
+          </fieldset>
+
+          <fieldset>
+            <legend>Food preferences (multi-select)</legend>
+            {foodOptions.map((option) => (
+              <label key={option} style={{ display: 'block' }}>
+                <input
+                  type="checkbox"
+                  checked={food.includes(option)}
+                  onChange={() => setFood((current) => toggleValue(current, option))}
+                />
+                {option}
+              </label>
+            ))}
+          </fieldset>
+
+          <fieldset>
+            <legend>Avoid (multi-select)</legend>
+            {avoidOptions.map((option) => (
+              <label key={option} style={{ display: 'block' }}>
+                <input
+                  type="checkbox"
+                  checked={avoid.includes(option)}
+                  onChange={() => setAvoid((current) => toggleValue(current, option))}
+                />
+                {option}
+              </label>
+            ))}
+          </fieldset>
+
           <button type="submit" style={{ marginTop: '0.75rem' }}>Generate</button>
         </form>
         {generateError ? <p style={{ color: 'crimson' }}>{generateError}</p> : null}
