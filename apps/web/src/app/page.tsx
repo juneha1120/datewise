@@ -1,7 +1,10 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import {
+  GenerateItineraryRequest,
+  GenerateItineraryResponse,
+  GenerateItineraryResponseSchema,
   PlaceDetailsResponse,
   PlaceDetailsResponseSchema,
   PlacesAutocompleteResponse,
@@ -15,6 +18,11 @@ function toFriendlyErrorMessage(prefix: string, error: unknown): string {
 
   return prefix;
 }
+
+type ValidationErrorResponse = {
+  message?: string;
+  errors?: Array<{ path: string; message: string }>;
+};
 
 async function fetchFromWebApi(path: string): Promise<unknown> {
   let response: Response;
@@ -80,6 +88,27 @@ async function fetchFromWebApi(path: string): Promise<unknown> {
   return (await response.json()) as unknown;
 }
 
+async function postToWebApi(path: string, body: unknown): Promise<unknown> {
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  const parsedBody = (await response.json()) as unknown;
+
+  if (!response.ok) {
+    const validation = parsedBody as ValidationErrorResponse;
+    if (response.status === 400 && validation.message === 'Validation failed' && Array.isArray(validation.errors)) {
+      const details = validation.errors.map((error) => `${error.path}: ${error.message}`).join(', ');
+      throw new Error(`Validation failed: ${details}`);
+    }
+
+    throw new Error(`Request failed with status ${response.status}`);
+  }
+
+  return parsedBody;
+}
 
 function getBrowserApiBaseUrls(): string[] {
   const locationDerivedBaseUrl =
@@ -152,6 +181,17 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedOrigin, setSelectedOrigin] = useState<PlaceDetailsResponse | null>(null);
+  const [date, setDate] = useState('2026-01-10');
+  const [startTime, setStartTime] = useState('18:00');
+  const [durationMin, setDurationMin] = useState('180');
+  const [budget, setBudget] = useState('$$');
+  const [dateStyle, setDateStyle] = useState('SCENIC');
+  const [vibe, setVibe] = useState('ROMANTIC');
+  const [food, setFood] = useState('');
+  const [avoid, setAvoid] = useState('');
+  const [transport, setTransport] = useState('TRANSIT');
+  const [itinerary, setItinerary] = useState<GenerateItineraryResponse | null>(null);
+  const [generateError, setGenerateError] = useState<string | null>(null);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -207,7 +247,7 @@ export default function HomePage() {
     try {
       setLoading(true);
       setError(null);
-      
+
       const body = await fetchFromWebApi(`/api/places/details?placeId=${encodeURIComponent(placeId)}`);
 
       const details = PlaceDetailsResponseSchema.parse(body);
@@ -218,6 +258,39 @@ export default function HomePage() {
       setError(toFriendlyErrorMessage('Failed to fetch selected place details.', caughtError));
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function onGenerateItinerary(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!selectedOrigin) {
+      setGenerateError('Please select an origin first.');
+      return;
+    }
+
+    setGenerateError(null);
+
+    const request: GenerateItineraryRequest = {
+      origin: selectedOrigin,
+      date,
+      startTime,
+      durationMin: Number(durationMin),
+      budget,
+      dateStyle,
+      vibe,
+      food: food.trim() ? food.split(',').map((item) => item.trim()).filter(Boolean) : undefined,
+      avoid: avoid.trim() ? avoid.split(',').map((item) => item.trim()).filter(Boolean) : undefined,
+      transport: transport.trim() || undefined,
+    };
+
+    try {
+      const responseBody = await postToWebApi('/api/itineraries/generate', request);
+      const parsed = GenerateItineraryResponseSchema.parse(responseBody);
+      setItinerary(parsed);
+    } catch (caughtError) {
+      setItinerary(null);
+      setGenerateError(toFriendlyErrorMessage('Failed to generate itinerary.', caughtError));
     }
   }
 
@@ -267,6 +340,55 @@ export default function HomePage() {
           <pre style={{ margin: 0 }}>{JSON.stringify(selectedOrigin, null, 2)}</pre>
         </section>
       ) : null}
+
+      <section style={{ marginTop: '1rem', padding: '0.75rem', border: '1px solid #e5e7eb' }}>
+        <h2 style={{ marginTop: 0 }}>Generate stub itinerary</h2>
+        <form onSubmit={onGenerateItinerary}>
+          <label htmlFor="date">Date</label>
+          <input id="date" type="date" value={date} onChange={(event) => setDate(event.target.value)} />
+          <br />
+          <label htmlFor="start-time">Start time</label>
+          <input id="start-time" type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} />
+          <br />
+          <label htmlFor="duration">Duration (min)</label>
+          <input id="duration" type="number" value={durationMin} onChange={(event) => setDurationMin(event.target.value)} />
+          <br />
+          <label htmlFor="budget">Budget</label>
+          <input id="budget" value={budget} onChange={(event) => setBudget(event.target.value)} />
+          <br />
+          <label htmlFor="date-style">Date style</label>
+          <input id="date-style" value={dateStyle} onChange={(event) => setDateStyle(event.target.value)} />
+          <br />
+          <label htmlFor="vibe">Vibe</label>
+          <input id="vibe" value={vibe} onChange={(event) => setVibe(event.target.value)} />
+          <br />
+          <label htmlFor="food">Food preferences (comma separated)</label>
+          <input id="food" value={food} onChange={(event) => setFood(event.target.value)} />
+          <br />
+          <label htmlFor="avoid">Avoid (comma separated)</label>
+          <input id="avoid" value={avoid} onChange={(event) => setAvoid(event.target.value)} />
+          <br />
+          <label htmlFor="transport">Transport</label>
+          <input id="transport" value={transport} onChange={(event) => setTransport(event.target.value)} />
+          <br />
+          <button type="submit" style={{ marginTop: '0.75rem' }}>Generate</button>
+        </form>
+        {generateError ? <p style={{ color: 'crimson' }}>{generateError}</p> : null}
+        {itinerary ? (
+          <div>
+            <p>
+              <strong>Itinerary ID:</strong> {itinerary.itineraryId}
+            </p>
+            <ul>
+              {itinerary.stops.map((stop, index) => (
+                <li key={`${stop.name}-${index}`}>
+                  {stop.name} ({stop.kind})
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </section>
     </main>
   );
 }

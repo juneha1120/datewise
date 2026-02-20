@@ -22,12 +22,24 @@ function getBaseUrlCandidates(): string[] {
   return [...new Set(candidates)];
 }
 
-export async function proxyToApi(request: NextRequest, path: string): Promise<NextResponse> {
+type ProxyOptions = {
+  method?: 'GET' | 'POST';
+};
+
+export async function proxyToApi(request: NextRequest, path: string, options: ProxyOptions = {}): Promise<NextResponse> {
   let lastError: unknown;
+  const method = options.method ?? request.method;
+
+  const requestBody = method === 'POST' ? JSON.stringify(await request.json()) : undefined;
 
   for (const baseUrl of getBaseUrlCandidates()) {
     try {
-      const response = await fetch(`${baseUrl}${path}`, { cache: 'no-store' });
+      const response = await fetch(`${baseUrl}${path}`, {
+        method,
+        cache: 'no-store',
+        headers: method === 'POST' ? { 'content-type': 'application/json' } : undefined,
+        body: requestBody,
+      });
       const body = (await response.json()) as unknown;
       return NextResponse.json(body, { status: response.status });
     } catch (error) {
