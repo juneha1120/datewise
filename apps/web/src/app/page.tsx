@@ -110,13 +110,28 @@ async function fetchFromWebApi(path: string): Promise<unknown> {
 }
 
 async function postToWebApi(path: string, body: unknown): Promise<unknown> {
-  const response = await fetch(path, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  let response: Response;
 
-  const parsedBody = (await response.json()) as unknown;
+  try {
+    response = await fetch(path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch (error) {
+    if (path.startsWith('/api/itineraries/')) {
+      return postToBrowserApi(path, body);
+    }
+
+    throw error;
+  }
+
+  const parsedBody = (await response.json()) as {
+    message?: unknown;
+    code?: unknown;
+    details?: unknown;
+    errors?: unknown;
+  };
 
   if (!response.ok) {
     const validation = parsedBody as ValidationErrorResponse;
@@ -125,7 +140,23 @@ async function postToWebApi(path: string, body: unknown): Promise<unknown> {
       throw new Error(`Validation failed: ${details}`);
     }
 
-    throw new Error(`Request failed with status ${response.status}`);
+    if (
+      path.startsWith('/api/itineraries/') &&
+      typeof parsedBody.code === 'string' &&
+      parsedBody.code === 'UPSTREAM_UNREACHABLE'
+    ) {
+      return postToBrowserApi(path, body);
+    }
+
+    let details = `Request failed with status ${response.status}`;
+    if (typeof parsedBody.message === 'string') {
+      details = parsedBody.message;
+    }
+    if (typeof parsedBody.details === 'string') {
+      details = `${details} (${parsedBody.details})`;
+    }
+
+    throw new Error(details);
   }
 
   return parsedBody;
@@ -151,7 +182,15 @@ function getBrowserApiBaseUrls(): string[] {
 }
 
 function toBackendPath(webApiPath: string): string {
-  return webApiPath.replace(/^\/api\/places\//u, '/v1/places/');
+  if (webApiPath.startsWith('/api/places/')) {
+    return webApiPath.replace(/^\/api\/places\//u, '/v1/places/');
+  }
+
+  if (webApiPath.startsWith('/api/itineraries/')) {
+    return webApiPath.replace(/^\/api\/itineraries\//u, '/v1/itineraries/');
+  }
+
+  return webApiPath;
 }
 
 async function fetchFromBrowserApi(path: string): Promise<unknown> {
@@ -179,6 +218,63 @@ async function fetchFromBrowserApi(path: string): Promise<unknown> {
       }
 
       return (await response.json()) as unknown;
+    } catch (error) {
+      const normalizedError = error instanceof Error ? error : new Error(String(error));
+      attempted.push(`${baseUrl} -> ${normalizedError.message}`);
+      lastError = normalizedError;
+    }
+  }
+
+  if (attempted.length > 0) {
+    throw new Error(
+      `Browser fallback to API failed. Ensure \`npm run dev:api\` is running and reachable on port 3001. Tried: ${attempted.join(' | ')}`,
+    );
+  }
+
+  throw lastError ?? new Error('Browser fallback to API failed.');
+}
+
+async function postToBrowserApi(path: string, body: unknown): Promise<unknown> {
+  const backendPath = toBackendPath(path);
+  let lastError: Error | null = null;
+  const attempted: string[] = [];
+
+  for (const baseUrl of getBrowserApiBaseUrls()) {
+    try {
+      const response = await fetch(`${baseUrl}${backendPath}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      const parsedBody = (await response.json()) as {
+        message?: unknown;
+        code?: unknown;
+        details?: unknown;
+        errors?: unknown;
+      };
+
+      if (!response.ok) {
+        const validation = parsedBody as ValidationErrorResponse;
+        if (response.status === 400 && validation.message === 'Validation failed' && Array.isArray(validation.errors)) {
+          const details = validation.errors.map((error) => `${error.path}: ${error.message}`).join(', ');
+          throw new Error(`Validation failed: ${details}`);
+        }
+
+        let details = `HTTP ${response.status}`;
+        if (typeof parsedBody.code === 'string' && typeof parsedBody.message === 'string') {
+          details = `${parsedBody.code}: ${parsedBody.message}`;
+        } else if (typeof parsedBody.message === 'string') {
+          details = parsedBody.message;
+        }
+        if (typeof parsedBody.details === 'string') {
+          details = `${details} (${parsedBody.details})`;
+        }
+
+        throw new Error(`${baseUrl} -> ${details}`);
+      }
+
+      return parsedBody;
     } catch (error) {
       const normalizedError = error instanceof Error ? error : new Error(String(error));
       attempted.push(`${baseUrl} -> ${normalizedError.message}`);
