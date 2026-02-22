@@ -179,7 +179,7 @@ test('googleNearbyToCandidates normalizes singapore nearby places', () => {
       reviewCount: 812,
       priceLevel: 2,
       types: ['bakery', 'cafe'],
-      tags: ['BAKERY', 'CAFE'],
+      tags: ['COZY', 'DATE_NIGHT'],
     },
   ]);
 });
@@ -224,4 +224,60 @@ test('googleNearbyToCandidates skips entries without location', () => {
   });
 
   assert.deepStrictEqual(response, []);
+});
+
+
+test('candidatesNearOrigin requests reviews in nearby field mask', () => {
+  process.env.GOOGLE_MAPS_API_KEY = 'test-token';
+  const service = new PlacesService() as unknown as {
+    candidatesNearOrigin: (originPlaceId: string) => Promise<unknown>;
+  };
+
+  const originalFetch = global.fetch;
+  const calls: Array<{ url: string; init?: RequestInit }> = [];
+
+  global.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
+    calls.push({ url: String(input), init });
+
+    const url = String(input);
+    if (url.includes('/places/') && url.includes('?languageCode=en')) {
+      return new Response(
+        JSON.stringify({
+          id: 'origin',
+          displayName: { text: 'Origin Place' },
+          formattedAddress: 'Singapore',
+          location: { latitude: 1.3, longitude: 103.8 },
+          types: ['establishment'],
+          addressComponents: [{ shortText: 'SG', types: ['country'] }],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    }
+
+    return new Response(
+      JSON.stringify({
+        places: [
+          {
+            id: 'candidate-1',
+            displayName: { text: 'Romantic Cafe' },
+            formattedAddress: 'Singapore',
+            location: { latitude: 1.31, longitude: 103.81 },
+            types: ['cafe'],
+            reviews: [{ text: { text: 'great date night atmosphere' } }],
+            addressComponents: [{ shortText: 'SG', types: ['country'] }],
+          },
+        ],
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    );
+  }) as typeof fetch;
+
+  return service.candidatesNearOrigin('origin').then(() => {
+    global.fetch = originalFetch;
+    assert.equal(calls.length, 2);
+
+    const nearbyCall = calls[1];
+    const fieldMask = (nearbyCall.init?.headers as Record<string, string>)['X-Goog-FieldMask'];
+    assert.ok(fieldMask.includes('places.reviews.text.text'));
+  });
 });

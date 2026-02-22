@@ -12,6 +12,7 @@ import {
 import { z } from 'zod';
 import { CacheStore, InMemoryCacheStore } from './cache';
 import { fetchJsonWithRetry } from './http';
+import { TaggingService } from './tagging.service';
 
 const SINGAPORE_COUNTRY_CODE = 'SG';
 const GOOGLE_API_BASE = 'https://places.googleapis.com/v1';
@@ -70,8 +71,23 @@ const GoogleNearbySearchResponseSchema = z.object({
           .optional(),
         rating: z.number().min(0).max(5).optional(),
         userRatingCount: z.number().int().min(0).optional(),
-        priceLevel: z.enum(['PRICE_LEVEL_FREE', 'PRICE_LEVEL_INEXPENSIVE', 'PRICE_LEVEL_MODERATE', 'PRICE_LEVEL_EXPENSIVE', 'PRICE_LEVEL_VERY_EXPENSIVE']).optional(),
+        priceLevel: z
+          .enum([
+            'PRICE_LEVEL_FREE',
+            'PRICE_LEVEL_INEXPENSIVE',
+            'PRICE_LEVEL_MODERATE',
+            'PRICE_LEVEL_EXPENSIVE',
+            'PRICE_LEVEL_VERY_EXPENSIVE',
+          ])
+          .optional(),
         types: z.array(z.string()).default([]),
+        reviews: z
+          .array(
+            z.object({
+              text: z.object({ text: z.string().min(1) }).optional(),
+            }),
+          )
+          .default([]),
         addressComponents: z
           .array(
             z.object({
@@ -197,7 +213,10 @@ export function googleDetailsToResponse(payload: unknown): PlaceDetailsResponse 
   return normalized.data;
 }
 
-export function googleNearbyToCandidates(payload: unknown): Candidate[] {
+export function googleNearbyToCandidates(
+  payload: unknown,
+  taggingService: TaggingService = new TaggingService(),
+): Candidate[] {
   const parsed = GoogleNearbySearchResponseSchema.safeParse(payload);
   if (!parsed.success) {
     throw new HttpException(
@@ -215,7 +234,14 @@ export function googleNearbyToCandidates(payload: unknown): Candidate[] {
     .filter((place) => isSingaporeAddress(place.addressComponents))
     .map((place) => {
       const types = place.types.filter((type) => type.length > 0);
-      const tags = types.map((type) => type.toUpperCase());
+      const priceLevel = place.priceLevel ? priceLevelMap[place.priceLevel] : undefined;
+      const tags = taggingService.inferTags({
+        types,
+        priceLevel,
+        snippets: place.reviews
+          .map((review) => review.text?.text ?? '')
+          .filter((snippet) => snippet.length > 0),
+      });
 
       return CandidateSchema.parse({
         kind: 'PLACE',
@@ -226,24 +252,24 @@ export function googleNearbyToCandidates(payload: unknown): Candidate[] {
         address: place.formattedAddress,
         rating: place.rating,
         reviewCount: place.userRatingCount,
-        priceLevel: place.priceLevel ? priceLevelMap[place.priceLevel] : undefined,
+        priceLevel,
         types,
         tags,
       });
     });
 }
 
-function isSingaporeAddress(
-  components: Array<{ shortText?: string; types: string[] }>,
-): boolean {
-  return components.some((component) =>
-    component.types.includes('country') && component.shortText?.toUpperCase() === SINGAPORE_COUNTRY_CODE,
+function isSingaporeAddress(components: Array<{ shortText?: string; types: string[] }>): boolean {
+  return components.some(
+    (component) => component.types.includes('country') && component.shortText?.toUpperCase() === SINGAPORE_COUNTRY_CODE,
   );
 }
 
 @Injectable()
 export class PlacesService {
   private readonly cache: CacheStore = new InMemoryCacheStore();
+
+  constructor(private readonly taggingService: TaggingService = new TaggingService()) {}
 
   async autocomplete(query: string): Promise<PlacesAutocompleteResponse> {
     const cacheKey = `autocomplete:${query}`;
@@ -288,7 +314,9 @@ export class PlacesService {
     const response = await fetchJsonWithRetry<unknown>(
       `${GOOGLE_API_BASE}/places/${encodeURIComponent(placeId)}?languageCode=en`,
       {
-        headers: this.buildJsonHeaders('id,displayName.text,formattedAddress,location,types,addressComponents.shortText,addressComponents.types'),
+        headers: this.buildJsonHeaders(
+          'id,displayName.text,formattedAddress,location,types,addressComponents.shortText,addressComponents.types',
+        ),
       },
     );
 
@@ -308,7 +336,7 @@ export class PlacesService {
     const response = await fetchJsonWithRetry<unknown>(`${GOOGLE_API_BASE}/places:searchNearby`, {
       method: 'POST',
       headers: this.buildJsonHeaders(
-        'places.id,places.displayName.text,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.priceLevel,places.types,places.addressComponents.shortText,places.addressComponents.types',
+        'places.id,places.displayName.text,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.priceLevel,places.types,places.addressComponents.shortText,places.addressComponents.types,places.reviews.text.text',
       ),
       body: JSON.stringify({
         includedTypes: ['restaurant', 'tourist_attraction', 'cafe', 'museum', 'park', 'shopping_mall'],
@@ -329,7 +357,7 @@ export class PlacesService {
 
     const normalized = DebugPlaceCandidatesResponseSchema.parse({
       originPlaceId,
-      candidates: googleNearbyToCandidates(response),
+      candidates: googleNearbyToCandidates(response, this.taggingService),
     });
 
     this.cache.set(cacheKey, normalized, 60_000);

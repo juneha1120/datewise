@@ -46,6 +46,18 @@ export const VibeOptionSchema = z.enum(['CHILL', 'ACTIVE', 'ROMANTIC', 'ADVENTUR
 export const FoodPreferenceSchema = z.enum(['VEG', 'HALAL_FRIENDLY', 'NO_ALCOHOL', 'NO_SEAFOOD']);
 export const AvoidPreferenceSchema = z.enum(['OUTDOOR', 'PHYSICAL', 'CROWDED', 'LOUD']);
 export const TransportSchema = z.enum(['MIN_WALK', 'TRANSIT', 'DRIVE_OK', 'WALK_OK']);
+export const TagSchema = z.enum([
+  'ARTSY',
+  'BUDGET_FRIENDLY',
+  'COZY',
+  'CROWDED',
+  'DATE_NIGHT',
+  'ICONIC',
+  'LOUD',
+  'NATURE',
+  'PREMIUM',
+  'ROMANTIC',
+]);
 
 export const GenerateItineraryOriginSchema = PlaceDetailsResponseSchema;
 
@@ -60,7 +72,7 @@ export const CandidateSchema = z.object({
   reviewCount: z.number().int().min(0).optional(),
   priceLevel: z.number().int().min(0).max(4).optional(),
   types: z.array(z.string().min(1)).optional(),
-  tags: z.array(z.string().min(1)).optional(),
+  tags: z.array(TagSchema).optional(),
 });
 
 export const DebugPlaceCandidatesQuerySchema = z.object({
@@ -136,6 +148,7 @@ export type VibeOption = z.infer<typeof VibeOptionSchema>;
 export type FoodPreference = z.infer<typeof FoodPreferenceSchema>;
 export type AvoidPreference = z.infer<typeof AvoidPreferenceSchema>;
 export type Transport = z.infer<typeof TransportSchema>;
+export type Tag = z.infer<typeof TagSchema>;
 export type GenerateItineraryOrigin = z.infer<typeof GenerateItineraryOriginSchema>;
 export type GenerateItineraryRequest = z.infer<typeof GenerateItineraryRequestSchema>;
 export type Candidate = z.infer<typeof CandidateSchema>;
