@@ -54,11 +54,11 @@ Request
   "startTime": "HH:mm",
   "durationMin": 120,
   "budget": "$|$$|$$$",
-  "dateStyle": ["FOOD|ACTIVITY|EVENT|SCENIC|SURPRISE"],
-  "vibe": ["CHILL|ACTIVE|ROMANTIC|ADVENTUROUS"],
-  "food": ["VEG","HALAL_FRIENDLY","NO_ALCOHOL","NO_SEAFOOD"],
-  "avoid": ["OUTDOOR","PHYSICAL","CROWDED","LOUD"],
-  "transport": "MIN_WALK|TRANSIT|DRIVE_OK|WALK_OK"
+  "dateStyle": "FOOD|ACTIVITY|EVENT|SCENIC|SURPRISE",
+  "vibe": "CHILL|ACTIVE|ROMANTIC|ADVENTUROUS",
+  "food": ["VEG","HALAL_FRIENDLY","NO_ALCOHOL","NO_SEAFOOD"], // optional
+  "avoid": ["OUTDOOR","PHYSICAL","CROWDED","LOUD"], // optional
+  "transport": "MIN_WALK|TRANSIT|DRIVE_OK|WALK_OK" // optional
 }
 
 Response

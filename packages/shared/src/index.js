@@ -47,11 +47,11 @@ exports.GenerateItineraryRequestSchema = zod_1.z.object({
     startTime: TimeSchema,
     durationMin: zod_1.z.number().int().min(30).max(1440),
     budget: exports.BudgetSchema,
-    dateStyle: zod_1.z.array(exports.DateStyleOptionSchema).min(1),
-    vibe: zod_1.z.array(exports.VibeOptionSchema).min(1),
-    food: zod_1.z.array(exports.FoodPreferenceSchema).default([]),
-    avoid: zod_1.z.array(exports.AvoidPreferenceSchema).default([]),
-    transport: exports.TransportSchema,
+    dateStyle: exports.DateStyleOptionSchema,
+    vibe: exports.VibeOptionSchema,
+    food: zod_1.z.array(exports.FoodPreferenceSchema).optional(),
+    avoid: zod_1.z.array(exports.AvoidPreferenceSchema).optional(),
+    transport: exports.TransportSchema.optional(),
 });
 exports.ItineraryStopSchema = zod_1.z.object({
     kind: zod_1.z.enum(['PLACE', 'EVENT']),

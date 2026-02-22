@@ -18,11 +18,11 @@ test('generateStubItinerary includes requested selection tags in stub response',
     startTime: '18:30',
     durationMin: 180,
     budget: '$$',
-    dateStyle: ['FOOD', 'SCENIC'],
-    vibe: ['ROMANTIC', 'CHILL'],
+    dateStyle: 'FOOD',
+    vibe: 'ROMANTIC',
     food: ['VEG', 'NO_ALCOHOL'],
     avoid: ['LOUD'],
-    transport: 'TRANSIT',
+    transport: undefined,
   });
 
   const stopTags = itinerary.stops.flatMap((stop) => stop.tags);

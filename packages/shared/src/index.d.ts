@@ -150,13 +150,13 @@ export declare const GenerateItineraryRequestSchema: z.ZodObject<{
     startTime: z.ZodString;
     durationMin: z.ZodNumber;
     budget: z.ZodEnum<["$", "$$", "$$$"]>;
-    dateStyle: z.ZodArray<z.ZodEnum<["FOOD", "ACTIVITY", "EVENT", "SCENIC", "SURPRISE"]>, "many">;
-    vibe: z.ZodArray<z.ZodEnum<["CHILL", "ACTIVE", "ROMANTIC", "ADVENTUROUS"]>, "many">;
-    food: z.ZodDefault<z.ZodArray<z.ZodEnum<["VEG", "HALAL_FRIENDLY", "NO_ALCOHOL", "NO_SEAFOOD"]>, "many">>;
-    avoid: z.ZodDefault<z.ZodArray<z.ZodEnum<["OUTDOOR", "PHYSICAL", "CROWDED", "LOUD"]>, "many">>;
-    transport: z.ZodEnum<["MIN_WALK", "TRANSIT", "DRIVE_OK", "WALK_OK"]>;
+    dateStyle: z.ZodEnum<["FOOD", "ACTIVITY", "EVENT", "SCENIC", "SURPRISE"]>;
+    vibe: z.ZodEnum<["CHILL", "ACTIVE", "ROMANTIC", "ADVENTUROUS"]>;
+    food: z.ZodOptional<z.ZodArray<z.ZodEnum<["VEG", "HALAL_FRIENDLY", "NO_ALCOHOL", "NO_SEAFOOD"]>, "many">>;
+    avoid: z.ZodOptional<z.ZodArray<z.ZodEnum<["OUTDOOR", "PHYSICAL", "CROWDED", "LOUD"]>, "many">>;
+    transport: z.ZodOptional<z.ZodEnum<["MIN_WALK", "TRANSIT", "DRIVE_OK", "WALK_OK"]>>;
 }, "strip", z.ZodTypeAny, {
-    vibe: ("CHILL" | "ACTIVE" | "ROMANTIC" | "ADVENTUROUS")[];
+    vibe: "CHILL" | "ACTIVE" | "ROMANTIC" | "ADVENTUROUS";
     date: string;
     origin: {
         placeId: string;
@@ -169,28 +169,28 @@ export declare const GenerateItineraryRequestSchema: z.ZodObject<{
     startTime: string;
     durationMin: number;
     budget: "$" | "$$" | "$$$";
-    dateStyle: ("FOOD" | "ACTIVITY" | "EVENT" | "SCENIC" | "SURPRISE")[];
-    food: ("VEG" | "HALAL_FRIENDLY" | "NO_ALCOHOL" | "NO_SEAFOOD")[];
-    avoid: ("OUTDOOR" | "PHYSICAL" | "CROWDED" | "LOUD")[];
-    transport: "MIN_WALK" | "TRANSIT" | "DRIVE_OK" | "WALK_OK";
-}, {
-    vibe: ("CHILL" | "ACTIVE" | "ROMANTIC" | "ADVENTUROUS")[];
-    date: string;
-    origin: {
-        placeId: string;
-        name: string;
-        formattedAddress: string;
-        lat: number;
-        lng: number;
-        types: string[];
-    };
-    startTime: string;
-    durationMin: number;
-    budget: "$" | "$$" | "$$$";
-    dateStyle: ("FOOD" | "ACTIVITY" | "EVENT" | "SCENIC" | "SURPRISE")[];
-    transport: "MIN_WALK" | "TRANSIT" | "DRIVE_OK" | "WALK_OK";
+    dateStyle: "FOOD" | "ACTIVITY" | "EVENT" | "SCENIC" | "SURPRISE";
     food?: ("VEG" | "HALAL_FRIENDLY" | "NO_ALCOHOL" | "NO_SEAFOOD")[] | undefined;
     avoid?: ("OUTDOOR" | "PHYSICAL" | "CROWDED" | "LOUD")[] | undefined;
+    transport?: "MIN_WALK" | "TRANSIT" | "DRIVE_OK" | "WALK_OK" | undefined;
+}, {
+    vibe: "CHILL" | "ACTIVE" | "ROMANTIC" | "ADVENTUROUS";
+    date: string;
+    origin: {
+        placeId: string;
+        name: string;
+        formattedAddress: string;
+        lat: number;
+        lng: number;
+        types: string[];
+    };
+    startTime: string;
+    durationMin: number;
+    budget: "$" | "$$" | "$$$";
+    dateStyle: "FOOD" | "ACTIVITY" | "EVENT" | "SCENIC" | "SURPRISE";
+    food?: ("VEG" | "HALAL_FRIENDLY" | "NO_ALCOHOL" | "NO_SEAFOOD")[] | undefined;
+    avoid?: ("OUTDOOR" | "PHYSICAL" | "CROWDED" | "LOUD")[] | undefined;
+    transport?: "MIN_WALK" | "TRANSIT" | "DRIVE_OK" | "WALK_OK" | undefined;
 }>;
 export declare const ItineraryStopSchema: z.ZodObject<{
     kind: z.ZodEnum<["PLACE", "EVENT"]>;

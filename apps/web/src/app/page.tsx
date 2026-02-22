@@ -206,9 +206,9 @@ export default function HomePage() {
   const [startTime, setStartTime] = useState('18:00');
   const [durationMin, setDurationMin] = useState('180');
   const [budget, setBudget] = useState<Budget>('$$');
-  const [transport, setTransport] = useState<Transport>('TRANSIT');
-  const [dateStyle, setDateStyle] = useState<DateStyleOption[]>(['SCENIC']);
-  const [vibe, setVibe] = useState<VibeOption[]>(['ROMANTIC']);
+  const [transport, setTransport] = useState<Transport | ''>('');
+  const [dateStyle, setDateStyle] = useState<DateStyleOption>('SCENIC');
+  const [vibe, setVibe] = useState<VibeOption>('ROMANTIC');
   const [food, setFood] = useState<FoodPreference[]>([]);
   const [avoid, setAvoid] = useState<AvoidPreference[]>([]);
   const [itinerary, setItinerary] = useState<GenerateItineraryResponse | null>(null);
@@ -290,11 +290,6 @@ export default function HomePage() {
       return;
     }
 
-    if (dateStyle.length === 0 || vibe.length === 0) {
-      setGenerateError('Pick at least one date style and one vibe.');
-      return;
-    }
-
     setGenerateError(null);
 
     const request: GenerateItineraryRequest = {
@@ -307,7 +302,7 @@ export default function HomePage() {
       vibe,
       food,
       avoid,
-      transport,
+      transport: transport || undefined,
     };
 
     try {
@@ -388,44 +383,33 @@ export default function HomePage() {
           </select>
           <br />
 
-          <label htmlFor="transport">Transport</label>
-          <select id="transport" value={transport} onChange={(event) => setTransport(event.target.value as Transport)}>
+          <label htmlFor="transport">Transport (optional)</label>
+          <select id="transport" value={transport} onChange={(event) => setTransport(event.target.value as Transport | '')}>
+            <option value="">No preference</option>
             {transportOptions.map((option) => (
               <option key={option} value={option}>{option}</option>
             ))}
           </select>
           <br />
 
-          <fieldset>
-            <legend>Date style (multi-select)</legend>
+          <label htmlFor="date-style">Date style</label>
+          <select id="date-style" value={dateStyle} onChange={(event) => setDateStyle(event.target.value as DateStyleOption)}>
             {dateStyleOptions.map((option) => (
-              <label key={option} style={{ display: 'block' }}>
-                <input
-                  type="checkbox"
-                  checked={dateStyle.includes(option)}
-                  onChange={() => setDateStyle((current) => toggleValue(current, option))}
-                />
-                {option}
-              </label>
+              <option key={option} value={option}>{option}</option>
             ))}
-          </fieldset>
+          </select>
+          <br />
 
-          <fieldset>
-            <legend>Vibe (multi-select)</legend>
+          <label htmlFor="vibe">Vibe</label>
+          <select id="vibe" value={vibe} onChange={(event) => setVibe(event.target.value as VibeOption)}>
             {vibeOptions.map((option) => (
-              <label key={option} style={{ display: 'block' }}>
-                <input
-                  type="checkbox"
-                  checked={vibe.includes(option)}
-                  onChange={() => setVibe((current) => toggleValue(current, option))}
-                />
-                {option}
-              </label>
+              <option key={option} value={option}>{option}</option>
             ))}
-          </fieldset>
+          </select>
+          <br />
 
           <fieldset>
-            <legend>Food preferences (multi-select)</legend>
+            <legend>Food preferences (optional multi-select)</legend>
             {foodOptions.map((option) => (
               <label key={option} style={{ display: 'block' }}>
                 <input
@@ -439,7 +423,7 @@ export default function HomePage() {
           </fieldset>
 
           <fieldset>
-            <legend>Avoid (multi-select)</legend>
+            <legend>Avoid (optional multi-select)</legend>
             {avoidOptions.map((option) => (
               <label key={option} style={{ display: 'block' }}>
                 <input

@@ -55,11 +55,11 @@ export const GenerateItineraryRequestSchema = z.object({
   startTime: TimeSchema,
   durationMin: z.number().int().min(30).max(1440),
   budget: BudgetSchema,
-  dateStyle: z.array(DateStyleOptionSchema).min(1),
-  vibe: z.array(VibeOptionSchema).min(1),
-  food: z.array(FoodPreferenceSchema).default([]),
-  avoid: z.array(AvoidPreferenceSchema).default([]),
-  transport: TransportSchema,
+  dateStyle: DateStyleOptionSchema,
+  vibe: VibeOptionSchema,
+  food: z.array(FoodPreferenceSchema).optional(),
+  avoid: z.array(AvoidPreferenceSchema).optional(),
+  transport: TransportSchema.optional(),
 });
 
 export const ItineraryStopSchema = z.object({
