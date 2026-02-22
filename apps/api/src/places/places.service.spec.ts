@@ -179,7 +179,7 @@ test('googleNearbyToCandidates normalizes singapore nearby places', () => {
       reviewCount: 812,
       priceLevel: 2,
       types: ['bakery', 'cafe'],
-      tags: ['BAKERY', 'CAFE'],
+      tags: ['COZY', 'DATE_NIGHT'],
     },
   ]);
 });

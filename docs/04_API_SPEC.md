@@ -38,6 +38,7 @@ Provider notes
 - `/v1/places/autocomplete`, `/v1/places/details`, and `/v1/places/debug/candidates` are backed by Google Places API (Autocomplete + Place Details + Nearby Search).
 - Requests are restricted to Singapore (`country=SG`) with Singapore proximity bias.
 - External calls use timeout <= 5s and max 2 retries.
+- Candidate tags are deterministic heuristic labels from place types, price level, and snippets (e.g. `ARTSY`, `ROMANTIC`, `LOUD`).
 
 
 ## GET /v1/places/debug/candidates
@@ -60,7 +61,7 @@ Response
       "reviewCount": 1200,
       "priceLevel": 2,
       "types": ["cafe", "restaurant"],
-      "tags": ["CAFE", "RESTAURANT"]
+      "tags": ["COZY", "DATE_NIGHT", "BUDGET_FRIENDLY"]
     }
   ]
 }

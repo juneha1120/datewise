@@ -101,6 +101,7 @@ export declare const VibeOptionSchema: z.ZodEnum<["CHILL", "ACTIVE", "ROMANTIC",
 export declare const FoodPreferenceSchema: z.ZodEnum<["VEG", "HALAL_FRIENDLY", "NO_ALCOHOL", "NO_SEAFOOD"]>;
 export declare const AvoidPreferenceSchema: z.ZodEnum<["OUTDOOR", "PHYSICAL", "CROWDED", "LOUD"]>;
 export declare const TransportSchema: z.ZodEnum<["MIN_WALK", "TRANSIT", "DRIVE_OK", "WALK_OK"]>;
+export declare const TagSchema: z.ZodEnum<["ARTSY", "BUDGET_FRIENDLY", "COZY", "CROWDED", "DATE_NIGHT", "ICONIC", "LOUD", "NATURE", "PREMIUM", "ROMANTIC"]>;
 export declare const GenerateItineraryOriginSchema: z.ZodObject<{
     placeId: z.ZodString;
     name: z.ZodString;
@@ -134,7 +135,7 @@ export declare const CandidateSchema: z.ZodObject<{
     reviewCount: z.ZodOptional<z.ZodNumber>;
     priceLevel: z.ZodOptional<z.ZodNumber>;
     types: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
-    tags: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
+    tags: z.ZodOptional<z.ZodArray<z.ZodEnum<["ARTSY", "BUDGET_FRIENDLY", "COZY", "CROWDED", "DATE_NIGHT", "ICONIC", "LOUD", "NATURE", "PREMIUM", "ROMANTIC"]>, "many">>;
 }, "strip", z.ZodTypeAny, {
     name: string;
     lat: number;
@@ -146,7 +147,7 @@ export declare const CandidateSchema: z.ZodObject<{
     rating?: number | undefined;
     reviewCount?: number | undefined;
     priceLevel?: number | undefined;
-    tags?: string[] | undefined;
+    tags?: ("ROMANTIC" | "CROWDED" | "LOUD" | "ARTSY" | "BUDGET_FRIENDLY" | "COZY" | "DATE_NIGHT" | "ICONIC" | "NATURE" | "PREMIUM")[] | undefined;
 }, {
     name: string;
     lat: number;
@@ -158,7 +159,7 @@ export declare const CandidateSchema: z.ZodObject<{
     rating?: number | undefined;
     reviewCount?: number | undefined;
     priceLevel?: number | undefined;
-    tags?: string[] | undefined;
+    tags?: ("ROMANTIC" | "CROWDED" | "LOUD" | "ARTSY" | "BUDGET_FRIENDLY" | "COZY" | "DATE_NIGHT" | "ICONIC" | "NATURE" | "PREMIUM")[] | undefined;
 }>;
 export declare const DebugPlaceCandidatesQuerySchema: z.ZodObject<{
     originPlaceId: z.ZodString;
@@ -180,7 +181,7 @@ export declare const DebugPlaceCandidatesResponseSchema: z.ZodObject<{
         reviewCount: z.ZodOptional<z.ZodNumber>;
         priceLevel: z.ZodOptional<z.ZodNumber>;
         types: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
-        tags: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
+        tags: z.ZodOptional<z.ZodArray<z.ZodEnum<["ARTSY", "BUDGET_FRIENDLY", "COZY", "CROWDED", "DATE_NIGHT", "ICONIC", "LOUD", "NATURE", "PREMIUM", "ROMANTIC"]>, "many">>;
     }, "strip", z.ZodTypeAny, {
         name: string;
         lat: number;
@@ -192,7 +193,7 @@ export declare const DebugPlaceCandidatesResponseSchema: z.ZodObject<{
         rating?: number | undefined;
         reviewCount?: number | undefined;
         priceLevel?: number | undefined;
-        tags?: string[] | undefined;
+        tags?: ("ROMANTIC" | "CROWDED" | "LOUD" | "ARTSY" | "BUDGET_FRIENDLY" | "COZY" | "DATE_NIGHT" | "ICONIC" | "NATURE" | "PREMIUM")[] | undefined;
     }, {
         name: string;
         lat: number;
@@ -204,7 +205,7 @@ export declare const DebugPlaceCandidatesResponseSchema: z.ZodObject<{
         rating?: number | undefined;
         reviewCount?: number | undefined;
         priceLevel?: number | undefined;
-        tags?: string[] | undefined;
+        tags?: ("ROMANTIC" | "CROWDED" | "LOUD" | "ARTSY" | "BUDGET_FRIENDLY" | "COZY" | "DATE_NIGHT" | "ICONIC" | "NATURE" | "PREMIUM")[] | undefined;
     }>, "many">;
 }, "strip", z.ZodTypeAny, {
     originPlaceId: string;
@@ -219,7 +220,7 @@ export declare const DebugPlaceCandidatesResponseSchema: z.ZodObject<{
         rating?: number | undefined;
         reviewCount?: number | undefined;
         priceLevel?: number | undefined;
-        tags?: string[] | undefined;
+        tags?: ("ROMANTIC" | "CROWDED" | "LOUD" | "ARTSY" | "BUDGET_FRIENDLY" | "COZY" | "DATE_NIGHT" | "ICONIC" | "NATURE" | "PREMIUM")[] | undefined;
     }[];
 }, {
     originPlaceId: string;
@@ -234,7 +235,7 @@ export declare const DebugPlaceCandidatesResponseSchema: z.ZodObject<{
         rating?: number | undefined;
         reviewCount?: number | undefined;
         priceLevel?: number | undefined;
-        tags?: string[] | undefined;
+        tags?: ("ROMANTIC" | "CROWDED" | "LOUD" | "ARTSY" | "BUDGET_FRIENDLY" | "COZY" | "DATE_NIGHT" | "ICONIC" | "NATURE" | "PREMIUM")[] | undefined;
     }[];
 }>;
 export declare const GenerateItineraryRequestSchema: z.ZodObject<{
@@ -524,6 +525,7 @@ export type VibeOption = z.infer<typeof VibeOptionSchema>;
 export type FoodPreference = z.infer<typeof FoodPreferenceSchema>;
 export type AvoidPreference = z.infer<typeof AvoidPreferenceSchema>;
 export type Transport = z.infer<typeof TransportSchema>;
+export type Tag = z.infer<typeof TagSchema>;
 export type GenerateItineraryOrigin = z.infer<typeof GenerateItineraryOriginSchema>;
 export type GenerateItineraryRequest = z.infer<typeof GenerateItineraryRequestSchema>;
 export type Candidate = z.infer<typeof CandidateSchema>;
