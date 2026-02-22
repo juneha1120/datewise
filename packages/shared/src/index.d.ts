@@ -123,6 +123,120 @@ export declare const GenerateItineraryOriginSchema: z.ZodObject<{
     lng: number;
     types: string[];
 }>;
+export declare const CandidateSchema: z.ZodObject<{
+    kind: z.ZodEnum<["PLACE", "EVENT"]>;
+    externalId: z.ZodString;
+    name: z.ZodString;
+    lat: z.ZodNumber;
+    lng: z.ZodNumber;
+    address: z.ZodOptional<z.ZodString>;
+    rating: z.ZodOptional<z.ZodNumber>;
+    reviewCount: z.ZodOptional<z.ZodNumber>;
+    priceLevel: z.ZodOptional<z.ZodNumber>;
+    types: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
+    tags: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
+}, "strip", z.ZodTypeAny, {
+    name: string;
+    lat: number;
+    lng: number;
+    kind: "EVENT" | "PLACE";
+    externalId: string;
+    types?: string[] | undefined;
+    address?: string | undefined;
+    rating?: number | undefined;
+    reviewCount?: number | undefined;
+    priceLevel?: number | undefined;
+    tags?: string[] | undefined;
+}, {
+    name: string;
+    lat: number;
+    lng: number;
+    kind: "EVENT" | "PLACE";
+    externalId: string;
+    types?: string[] | undefined;
+    address?: string | undefined;
+    rating?: number | undefined;
+    reviewCount?: number | undefined;
+    priceLevel?: number | undefined;
+    tags?: string[] | undefined;
+}>;
+export declare const DebugPlaceCandidatesQuerySchema: z.ZodObject<{
+    originPlaceId: z.ZodString;
+}, "strip", z.ZodTypeAny, {
+    originPlaceId: string;
+}, {
+    originPlaceId: string;
+}>;
+export declare const DebugPlaceCandidatesResponseSchema: z.ZodObject<{
+    originPlaceId: z.ZodString;
+    candidates: z.ZodArray<z.ZodObject<{
+        kind: z.ZodEnum<["PLACE", "EVENT"]>;
+        externalId: z.ZodString;
+        name: z.ZodString;
+        lat: z.ZodNumber;
+        lng: z.ZodNumber;
+        address: z.ZodOptional<z.ZodString>;
+        rating: z.ZodOptional<z.ZodNumber>;
+        reviewCount: z.ZodOptional<z.ZodNumber>;
+        priceLevel: z.ZodOptional<z.ZodNumber>;
+        types: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
+        tags: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
+    }, "strip", z.ZodTypeAny, {
+        name: string;
+        lat: number;
+        lng: number;
+        kind: "EVENT" | "PLACE";
+        externalId: string;
+        types?: string[] | undefined;
+        address?: string | undefined;
+        rating?: number | undefined;
+        reviewCount?: number | undefined;
+        priceLevel?: number | undefined;
+        tags?: string[] | undefined;
+    }, {
+        name: string;
+        lat: number;
+        lng: number;
+        kind: "EVENT" | "PLACE";
+        externalId: string;
+        types?: string[] | undefined;
+        address?: string | undefined;
+        rating?: number | undefined;
+        reviewCount?: number | undefined;
+        priceLevel?: number | undefined;
+        tags?: string[] | undefined;
+    }>, "many">;
+}, "strip", z.ZodTypeAny, {
+    originPlaceId: string;
+    candidates: {
+        name: string;
+        lat: number;
+        lng: number;
+        kind: "EVENT" | "PLACE";
+        externalId: string;
+        types?: string[] | undefined;
+        address?: string | undefined;
+        rating?: number | undefined;
+        reviewCount?: number | undefined;
+        priceLevel?: number | undefined;
+        tags?: string[] | undefined;
+    }[];
+}, {
+    originPlaceId: string;
+    candidates: {
+        name: string;
+        lat: number;
+        lng: number;
+        kind: "EVENT" | "PLACE";
+        externalId: string;
+        types?: string[] | undefined;
+        address?: string | undefined;
+        rating?: number | undefined;
+        reviewCount?: number | undefined;
+        priceLevel?: number | undefined;
+        tags?: string[] | undefined;
+    }[];
+}>;
 export declare const GenerateItineraryRequestSchema: z.ZodObject<{
     origin: z.ZodObject<{
         placeId: z.ZodString;
@@ -210,11 +324,11 @@ export declare const ItineraryStopSchema: z.ZodObject<{
     lng: number;
     kind: "EVENT" | "PLACE";
     address: string;
-    url: string;
     rating: number;
     reviewCount: number;
     priceLevel: number;
     tags: string[];
+    url: string;
     reason: string;
 }, {
     name: string;
@@ -222,11 +336,11 @@ export declare const ItineraryStopSchema: z.ZodObject<{
     lng: number;
     kind: "EVENT" | "PLACE";
     address: string;
-    url: string;
     rating: number;
     reviewCount: number;
     priceLevel: number;
     tags: string[];
+    url: string;
     reason: string;
 }>;
 export declare const ItineraryLegSchema: z.ZodObject<{
@@ -278,11 +392,11 @@ export declare const GenerateItineraryResponseSchema: z.ZodObject<{
         lng: number;
         kind: "EVENT" | "PLACE";
         address: string;
-        url: string;
         rating: number;
         reviewCount: number;
         priceLevel: number;
         tags: string[];
+        url: string;
         reason: string;
     }, {
         name: string;
@@ -290,11 +404,11 @@ export declare const GenerateItineraryResponseSchema: z.ZodObject<{
         lng: number;
         kind: "EVENT" | "PLACE";
         address: string;
-        url: string;
         rating: number;
         reviewCount: number;
         priceLevel: number;
         tags: string[];
+        url: string;
         reason: string;
     }>, "many">;
     legs: z.ZodArray<z.ZodObject<{
@@ -344,11 +458,11 @@ export declare const GenerateItineraryResponseSchema: z.ZodObject<{
         lng: number;
         kind: "EVENT" | "PLACE";
         address: string;
-        url: string;
         rating: number;
         reviewCount: number;
         priceLevel: number;
         tags: string[];
+        url: string;
         reason: string;
     }[];
     legs: {
@@ -374,11 +488,11 @@ export declare const GenerateItineraryResponseSchema: z.ZodObject<{
         lng: number;
         kind: "EVENT" | "PLACE";
         address: string;
-        url: string;
         rating: number;
         reviewCount: number;
         priceLevel: number;
         tags: string[];
+        url: string;
         reason: string;
     }[];
     legs: {
@@ -412,6 +526,9 @@ export type AvoidPreference = z.infer<typeof AvoidPreferenceSchema>;
 export type Transport = z.infer<typeof TransportSchema>;
 export type GenerateItineraryOrigin = z.infer<typeof GenerateItineraryOriginSchema>;
 export type GenerateItineraryRequest = z.infer<typeof GenerateItineraryRequestSchema>;
+export type Candidate = z.infer<typeof CandidateSchema>;
+export type DebugPlaceCandidatesQuery = z.infer<typeof DebugPlaceCandidatesQuerySchema>;
+export type DebugPlaceCandidatesResponse = z.infer<typeof DebugPlaceCandidatesResponseSchema>;
 export type ItineraryStop = z.infer<typeof ItineraryStopSchema>;
 export type ItineraryLeg = z.infer<typeof ItineraryLegSchema>;
 export type ItineraryTotals = z.infer<typeof ItineraryTotalsSchema>;

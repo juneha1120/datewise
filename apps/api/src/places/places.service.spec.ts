@@ -1,7 +1,7 @@
-declare const test: (name: string, fn: () => void | Promise<void>) => void;
+import { test } from 'node:test';
 import * as assert from 'assert/strict';
 import { HttpException, HttpStatus } from '@nestjs/common';
-import { PlacesService, googleAutocompleteToResponse, googleDetailsToResponse } from './places.service';
+import { PlacesService, googleAutocompleteToResponse, googleDetailsToResponse, googleNearbyToCandidates } from './places.service';
 
 test('googleAutocompleteToResponse normalizes suggestions', () => {
   const response = googleAutocompleteToResponse({
@@ -147,4 +147,81 @@ test('details call sets Google field mask and languageCode', () => {
     assert.ok(calls[0].url.includes('/places/abc123?languageCode=en'));
     assert.equal((calls[0].init?.headers as Record<string, string>)['X-Goog-Api-Key'], 'test-token');
   });
+});
+
+
+test('googleNearbyToCandidates normalizes singapore nearby places', () => {
+  const response = googleNearbyToCandidates({
+    places: [
+      {
+        id: 'g.sg.place1',
+        displayName: { text: 'Tiong Bahru Bakery' },
+        formattedAddress: '56 Eng Hoon St, Singapore 160056',
+        location: { latitude: 1.2851, longitude: 103.8321 },
+        rating: 4.4,
+        userRatingCount: 812,
+        priceLevel: 'PRICE_LEVEL_MODERATE',
+        types: ['bakery', 'cafe'],
+        addressComponents: [{ shortText: 'SG', types: ['country', 'political'] }],
+      },
+    ],
+  });
+
+  assert.deepStrictEqual(response, [
+    {
+      kind: 'PLACE',
+      externalId: 'g.sg.place1',
+      name: 'Tiong Bahru Bakery',
+      lat: 1.2851,
+      lng: 103.8321,
+      address: '56 Eng Hoon St, Singapore 160056',
+      rating: 4.4,
+      reviewCount: 812,
+      priceLevel: 2,
+      types: ['bakery', 'cafe'],
+      tags: ['BAKERY', 'CAFE'],
+    },
+  ]);
+});
+
+test('googleNearbyToCandidates filters out non-Singapore places', () => {
+  const response = googleNearbyToCandidates({
+    places: [
+      {
+        id: 'g.sg.place2',
+        displayName: { text: 'National Gallery Singapore' },
+        formattedAddress: "1 St Andrew's Rd, Singapore 178957",
+        location: { latitude: 1.2906, longitude: 103.8516 },
+        types: ['museum'],
+        addressComponents: [{ shortText: 'SG', types: ['country'] }],
+      },
+      {
+        id: 'g.us.place3',
+        displayName: { text: 'Outside SG' },
+        formattedAddress: 'Market St, San Francisco',
+        location: { latitude: 37.7749, longitude: -122.4194 },
+        types: ['restaurant'],
+        addressComponents: [{ shortText: 'US', types: ['country'] }],
+      },
+    ],
+  });
+
+  assert.equal(response.length, 1);
+  assert.equal(response[0].externalId, 'g.sg.place2');
+});
+
+test('googleNearbyToCandidates skips entries without location', () => {
+  const response = googleNearbyToCandidates({
+    places: [
+      {
+        id: 'g.sg.place4',
+        displayName: { text: 'No Location Place' },
+        formattedAddress: 'Singapore',
+        types: ['park'],
+        addressComponents: [{ shortText: 'SG', types: ['country'] }],
+      },
+    ],
+  });
+
+  assert.deepStrictEqual(response, []);
 });

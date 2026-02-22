@@ -1,5 +1,9 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import {
+  Candidate,
+  CandidateSchema,
+  DebugPlaceCandidatesResponse,
+  DebugPlaceCandidatesResponseSchema,
   PlaceDetailsResponse,
   PlaceDetailsResponseSchema,
   PlacesAutocompleteResponse,
@@ -50,6 +54,44 @@ const GooglePlaceDetailsResponseSchema = z.object({
     )
     .default([]),
 });
+
+const GoogleNearbySearchResponseSchema = z.object({
+  places: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        displayName: z.object({ text: z.string().min(1) }).optional(),
+        formattedAddress: z.string().min(1).optional(),
+        location: z
+          .object({
+            latitude: z.number(),
+            longitude: z.number(),
+          })
+          .optional(),
+        rating: z.number().min(0).max(5).optional(),
+        userRatingCount: z.number().int().min(0).optional(),
+        priceLevel: z.enum(['PRICE_LEVEL_FREE', 'PRICE_LEVEL_INEXPENSIVE', 'PRICE_LEVEL_MODERATE', 'PRICE_LEVEL_EXPENSIVE', 'PRICE_LEVEL_VERY_EXPENSIVE']).optional(),
+        types: z.array(z.string()).default([]),
+        addressComponents: z
+          .array(
+            z.object({
+              shortText: z.string().optional(),
+              types: z.array(z.string()).default([]),
+            }),
+          )
+          .default([]),
+      }),
+    )
+    .default([]),
+});
+
+const priceLevelMap: Record<string, number> = {
+  PRICE_LEVEL_FREE: 0,
+  PRICE_LEVEL_INEXPENSIVE: 1,
+  PRICE_LEVEL_MODERATE: 2,
+  PRICE_LEVEL_EXPENSIVE: 3,
+  PRICE_LEVEL_VERY_EXPENSIVE: 4,
+};
 
 export function googleAutocompleteToResponse(payload: unknown): PlacesAutocompleteResponse {
   const parsed = GoogleAutocompleteResponseSchema.safeParse(payload);
@@ -155,6 +197,42 @@ export function googleDetailsToResponse(payload: unknown): PlaceDetailsResponse 
   return normalized.data;
 }
 
+export function googleNearbyToCandidates(payload: unknown): Candidate[] {
+  const parsed = GoogleNearbySearchResponseSchema.safeParse(payload);
+  if (!parsed.success) {
+    throw new HttpException(
+      {
+        code: 'INVALID_EXTERNAL_RESPONSE',
+        message: 'Invalid nearby places response from Google Places.',
+        details: parsed.error.flatten(),
+      },
+      HttpStatus.BAD_GATEWAY,
+    );
+  }
+
+  return parsed.data.places
+    .filter((place) => place.location)
+    .filter((place) => isSingaporeAddress(place.addressComponents))
+    .map((place) => {
+      const types = place.types.filter((type) => type.length > 0);
+      const tags = types.map((type) => type.toUpperCase());
+
+      return CandidateSchema.parse({
+        kind: 'PLACE',
+        externalId: place.id,
+        name: place.displayName?.text ?? place.formattedAddress ?? 'Unknown place',
+        lat: place.location?.latitude,
+        lng: place.location?.longitude,
+        address: place.formattedAddress,
+        rating: place.rating,
+        reviewCount: place.userRatingCount,
+        priceLevel: place.priceLevel ? priceLevelMap[place.priceLevel] : undefined,
+        types,
+        tags,
+      });
+    });
+}
+
 function isSingaporeAddress(
   components: Array<{ shortText?: string; types: string[] }>,
 ): boolean {
@@ -216,6 +294,45 @@ export class PlacesService {
 
     const normalized = googleDetailsToResponse(response);
     this.cache.set(cacheKey, normalized, 5 * 60_000);
+    return normalized;
+  }
+
+  async candidatesNearOrigin(originPlaceId: string): Promise<DebugPlaceCandidatesResponse> {
+    const cacheKey = `candidates:${originPlaceId}`;
+    const cached = this.cache.get<DebugPlaceCandidatesResponse>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const origin = await this.details(originPlaceId);
+    const response = await fetchJsonWithRetry<unknown>(`${GOOGLE_API_BASE}/places:searchNearby`, {
+      method: 'POST',
+      headers: this.buildJsonHeaders(
+        'places.id,places.displayName.text,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.priceLevel,places.types,places.addressComponents.shortText,places.addressComponents.types',
+      ),
+      body: JSON.stringify({
+        includedTypes: ['restaurant', 'tourist_attraction', 'cafe', 'museum', 'park', 'shopping_mall'],
+        maxResultCount: 20,
+        rankPreference: 'POPULARITY',
+        languageCode: 'en',
+        locationRestriction: {
+          circle: {
+            center: {
+              latitude: origin.lat,
+              longitude: origin.lng,
+            },
+            radius: 7_000,
+          },
+        },
+      }),
+    });
+
+    const normalized = DebugPlaceCandidatesResponseSchema.parse({
+      originPlaceId,
+      candidates: googleNearbyToCandidates(response),
+    });
+
+    this.cache.set(cacheKey, normalized, 60_000);
     return normalized;
   }
 

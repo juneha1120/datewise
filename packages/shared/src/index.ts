@@ -49,6 +49,29 @@ export const TransportSchema = z.enum(['MIN_WALK', 'TRANSIT', 'DRIVE_OK', 'WALK_
 
 export const GenerateItineraryOriginSchema = PlaceDetailsResponseSchema;
 
+export const CandidateSchema = z.object({
+  kind: z.enum(['PLACE', 'EVENT']),
+  externalId: z.string().min(1),
+  name: z.string().min(1),
+  lat: z.number(),
+  lng: z.number(),
+  address: z.string().min(1).optional(),
+  rating: z.number().min(0).max(5).optional(),
+  reviewCount: z.number().int().min(0).optional(),
+  priceLevel: z.number().int().min(0).max(4).optional(),
+  types: z.array(z.string().min(1)).optional(),
+  tags: z.array(z.string().min(1)).optional(),
+});
+
+export const DebugPlaceCandidatesQuerySchema = z.object({
+  originPlaceId: z.string().min(1),
+});
+
+export const DebugPlaceCandidatesResponseSchema = z.object({
+  originPlaceId: z.string().min(1),
+  candidates: z.array(CandidateSchema),
+});
+
 export const GenerateItineraryRequestSchema = z.object({
   origin: GenerateItineraryOriginSchema,
   date: DateSchema,
@@ -115,6 +138,9 @@ export type AvoidPreference = z.infer<typeof AvoidPreferenceSchema>;
 export type Transport = z.infer<typeof TransportSchema>;
 export type GenerateItineraryOrigin = z.infer<typeof GenerateItineraryOriginSchema>;
 export type GenerateItineraryRequest = z.infer<typeof GenerateItineraryRequestSchema>;
+export type Candidate = z.infer<typeof CandidateSchema>;
+export type DebugPlaceCandidatesQuery = z.infer<typeof DebugPlaceCandidatesQuerySchema>;
+export type DebugPlaceCandidatesResponse = z.infer<typeof DebugPlaceCandidatesResponseSchema>;
 export type ItineraryStop = z.infer<typeof ItineraryStopSchema>;
 export type ItineraryLeg = z.infer<typeof ItineraryLegSchema>;
 export type ItineraryTotals = z.infer<typeof ItineraryTotalsSchema>;

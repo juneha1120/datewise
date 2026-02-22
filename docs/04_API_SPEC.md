@@ -35,9 +35,36 @@ Response
 
 
 Provider notes
-- `/v1/places/autocomplete` and `/v1/places/details` are backed by Google Places API (Autocomplete + Place Details).
+- `/v1/places/autocomplete`, `/v1/places/details`, and `/v1/places/debug/candidates` are backed by Google Places API (Autocomplete + Place Details + Nearby Search).
 - Requests are restricted to Singapore (`country=SG`) with Singapore proximity bias.
 - External calls use timeout <= 5s and max 2 retries.
+
+
+## GET /v1/places/debug/candidates
+Query
+- `originPlaceId`: string (required, non-empty)
+
+Response
+```json
+{
+  "originPlaceId": "string",
+  "candidates": [
+    {
+      "kind": "PLACE|EVENT",
+      "externalId": "string",
+      "name": "string",
+      "lat": 1.3,
+      "lng": 103.8,
+      "address": "string",
+      "rating": 4.5,
+      "reviewCount": 1200,
+      "priceLevel": 2,
+      "types": ["cafe", "restaurant"],
+      "tags": ["CAFE", "RESTAURANT"]
+    }
+  ]
+}
+```
 
 ## POST /v1/itineraries/generate
 Request
