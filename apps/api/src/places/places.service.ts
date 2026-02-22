@@ -336,7 +336,7 @@ export class PlacesService {
     const response = await fetchJsonWithRetry<unknown>(`${GOOGLE_API_BASE}/places:searchNearby`, {
       method: 'POST',
       headers: this.buildJsonHeaders(
-        'places.id,places.displayName.text,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.priceLevel,places.types,places.addressComponents.shortText,places.addressComponents.types',
+        'places.id,places.displayName.text,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.priceLevel,places.types,places.addressComponents.shortText,places.addressComponents.types,places.reviews.text.text',
       ),
       body: JSON.stringify({
         includedTypes: ['restaurant', 'tourist_attraction', 'cafe', 'museum', 'park', 'shopping_mall'],
