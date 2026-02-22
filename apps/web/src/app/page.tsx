@@ -1,12 +1,28 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import {
+  AvoidPreference,
+  Budget,
+  DateStyleOption,
+  FoodPreference,
+  GenerateItineraryRequest,
+  GenerateItineraryResponse,
+  GenerateItineraryResponseSchema,
   PlaceDetailsResponse,
   PlaceDetailsResponseSchema,
   PlacesAutocompleteResponse,
   PlacesAutocompleteResponseSchema,
+  Transport,
+  VibeOption,
 } from '@datewise/shared';
+
+const budgetOptions: Budget[] = ['$', '$$', '$$$'];
+const transportOptions: Transport[] = ['MIN_WALK', 'TRANSIT', 'DRIVE_OK', 'WALK_OK'];
+const dateStyleOptions: DateStyleOption[] = ['FOOD', 'ACTIVITY', 'EVENT', 'SCENIC', 'SURPRISE'];
+const vibeOptions: VibeOption[] = ['CHILL', 'ACTIVE', 'ROMANTIC', 'ADVENTUROUS'];
+const foodOptions: FoodPreference[] = ['VEG', 'HALAL_FRIENDLY', 'NO_ALCOHOL', 'NO_SEAFOOD'];
+const avoidOptions: AvoidPreference[] = ['OUTDOOR', 'PHYSICAL', 'CROWDED', 'LOUD'];
 
 function toFriendlyErrorMessage(prefix: string, error: unknown): string {
   if (error instanceof Error && error.message) {
@@ -14,6 +30,19 @@ function toFriendlyErrorMessage(prefix: string, error: unknown): string {
   }
 
   return prefix;
+}
+
+type ValidationErrorResponse = {
+  message?: string;
+  errors?: Array<{ path: string; message: string }>;
+};
+
+function toggleValue<T extends string>(values: T[], value: T): T[] {
+  if (values.includes(value)) {
+    return values.filter((item) => item !== value);
+  }
+
+  return [...values, value];
 }
 
 async function fetchFromWebApi(path: string): Promise<unknown> {
@@ -80,6 +109,58 @@ async function fetchFromWebApi(path: string): Promise<unknown> {
   return (await response.json()) as unknown;
 }
 
+async function postToWebApi(path: string, body: unknown): Promise<unknown> {
+  let response: Response;
+
+  try {
+    response = await fetch(path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch (error) {
+    if (path.startsWith('/api/itineraries/')) {
+      return postToBrowserApi(path, body);
+    }
+
+    throw error;
+  }
+
+  const parsedBody = (await response.json()) as {
+    message?: unknown;
+    code?: unknown;
+    details?: unknown;
+    errors?: unknown;
+  };
+
+  if (!response.ok) {
+    const validation = parsedBody as ValidationErrorResponse;
+    if (response.status === 400 && validation.message === 'Validation failed' && Array.isArray(validation.errors)) {
+      const details = validation.errors.map((error) => `${error.path}: ${error.message}`).join(', ');
+      throw new Error(`Validation failed: ${details}`);
+    }
+
+    if (
+      path.startsWith('/api/itineraries/') &&
+      typeof parsedBody.code === 'string' &&
+      parsedBody.code === 'UPSTREAM_UNREACHABLE'
+    ) {
+      return postToBrowserApi(path, body);
+    }
+
+    let details = `Request failed with status ${response.status}`;
+    if (typeof parsedBody.message === 'string') {
+      details = parsedBody.message;
+    }
+    if (typeof parsedBody.details === 'string') {
+      details = `${details} (${parsedBody.details})`;
+    }
+
+    throw new Error(details);
+  }
+
+  return parsedBody;
+}
 
 function getBrowserApiBaseUrls(): string[] {
   const locationDerivedBaseUrl =
@@ -101,7 +182,15 @@ function getBrowserApiBaseUrls(): string[] {
 }
 
 function toBackendPath(webApiPath: string): string {
-  return webApiPath.replace(/^\/api\/places\//u, '/v1/places/');
+  if (webApiPath.startsWith('/api/places/')) {
+    return webApiPath.replace(/^\/api\/places\//u, '/v1/places/');
+  }
+
+  if (webApiPath.startsWith('/api/itineraries/')) {
+    return webApiPath.replace(/^\/api\/itineraries\//u, '/v1/itineraries/');
+  }
+
+  return webApiPath;
 }
 
 async function fetchFromBrowserApi(path: string): Promise<unknown> {
@@ -145,6 +234,63 @@ async function fetchFromBrowserApi(path: string): Promise<unknown> {
   throw lastError ?? new Error('Browser fallback to API failed.');
 }
 
+async function postToBrowserApi(path: string, body: unknown): Promise<unknown> {
+  const backendPath = toBackendPath(path);
+  let lastError: Error | null = null;
+  const attempted: string[] = [];
+
+  for (const baseUrl of getBrowserApiBaseUrls()) {
+    try {
+      const response = await fetch(`${baseUrl}${backendPath}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      const parsedBody = (await response.json()) as {
+        message?: unknown;
+        code?: unknown;
+        details?: unknown;
+        errors?: unknown;
+      };
+
+      if (!response.ok) {
+        const validation = parsedBody as ValidationErrorResponse;
+        if (response.status === 400 && validation.message === 'Validation failed' && Array.isArray(validation.errors)) {
+          const details = validation.errors.map((error) => `${error.path}: ${error.message}`).join(', ');
+          throw new Error(`Validation failed: ${details}`);
+        }
+
+        let details = `HTTP ${response.status}`;
+        if (typeof parsedBody.code === 'string' && typeof parsedBody.message === 'string') {
+          details = `${parsedBody.code}: ${parsedBody.message}`;
+        } else if (typeof parsedBody.message === 'string') {
+          details = parsedBody.message;
+        }
+        if (typeof parsedBody.details === 'string') {
+          details = `${details} (${parsedBody.details})`;
+        }
+
+        throw new Error(`${baseUrl} -> ${details}`);
+      }
+
+      return parsedBody;
+    } catch (error) {
+      const normalizedError = error instanceof Error ? error : new Error(String(error));
+      attempted.push(`${baseUrl} -> ${normalizedError.message}`);
+      lastError = normalizedError;
+    }
+  }
+
+  if (attempted.length > 0) {
+    throw new Error(
+      `Browser fallback to API failed. Ensure \`npm run dev:api\` is running and reachable on port 3001. Tried: ${attempted.join(' | ')}`,
+    );
+  }
+
+  throw lastError ?? new Error('Browser fallback to API failed.');
+}
+
 export default function HomePage() {
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
@@ -152,6 +298,17 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedOrigin, setSelectedOrigin] = useState<PlaceDetailsResponse | null>(null);
+  const [date, setDate] = useState('2026-01-10');
+  const [startTime, setStartTime] = useState('18:00');
+  const [durationMin, setDurationMin] = useState('180');
+  const [budget, setBudget] = useState<Budget>('$$');
+  const [transport, setTransport] = useState<Transport | ''>('');
+  const [dateStyle, setDateStyle] = useState<DateStyleOption>('SCENIC');
+  const [vibe, setVibe] = useState<VibeOption>('ROMANTIC');
+  const [food, setFood] = useState<FoodPreference[]>([]);
+  const [avoid, setAvoid] = useState<AvoidPreference[]>([]);
+  const [itinerary, setItinerary] = useState<GenerateItineraryResponse | null>(null);
+  const [generateError, setGenerateError] = useState<string | null>(null);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -207,7 +364,7 @@ export default function HomePage() {
     try {
       setLoading(true);
       setError(null);
-      
+
       const body = await fetchFromWebApi(`/api/places/details?placeId=${encodeURIComponent(placeId)}`);
 
       const details = PlaceDetailsResponseSchema.parse(body);
@@ -218,6 +375,39 @@ export default function HomePage() {
       setError(toFriendlyErrorMessage('Failed to fetch selected place details.', caughtError));
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function onGenerateItinerary(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!selectedOrigin) {
+      setGenerateError('Please select an origin first.');
+      return;
+    }
+
+    setGenerateError(null);
+
+    const request: GenerateItineraryRequest = {
+      origin: selectedOrigin,
+      date,
+      startTime,
+      durationMin: Number(durationMin),
+      budget,
+      dateStyle,
+      vibe,
+      food,
+      avoid,
+      transport: transport || undefined,
+    };
+
+    try {
+      const responseBody = await postToWebApi('/api/itineraries/generate', request);
+      const parsed = GenerateItineraryResponseSchema.parse(responseBody);
+      setItinerary(parsed);
+    } catch (caughtError) {
+      setItinerary(null);
+      setGenerateError(toFriendlyErrorMessage('Failed to generate itinerary.', caughtError));
     }
   }
 
@@ -267,6 +457,99 @@ export default function HomePage() {
           <pre style={{ margin: 0 }}>{JSON.stringify(selectedOrigin, null, 2)}</pre>
         </section>
       ) : null}
+
+      <section style={{ marginTop: '1rem', padding: '0.75rem', border: '1px solid #e5e7eb' }}>
+        <h2 style={{ marginTop: 0 }}>Generate stub itinerary</h2>
+        <form onSubmit={onGenerateItinerary}>
+          <label htmlFor="date">Date</label>
+          <input id="date" type="date" value={date} onChange={(event) => setDate(event.target.value)} />
+          <br />
+          <label htmlFor="start-time">Start time</label>
+          <input id="start-time" type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} />
+          <br />
+          <label htmlFor="duration">Duration (min)</label>
+          <input id="duration" type="number" value={durationMin} onChange={(event) => setDurationMin(event.target.value)} />
+          <br />
+
+          <label htmlFor="budget">Budget</label>
+          <select id="budget" value={budget} onChange={(event) => setBudget(event.target.value as Budget)}>
+            {budgetOptions.map((option) => (
+              <option key={option} value={option}>{option}</option>
+            ))}
+          </select>
+          <br />
+
+          <label htmlFor="transport">Transport (optional)</label>
+          <select id="transport" value={transport} onChange={(event) => setTransport(event.target.value as Transport | '')}>
+            <option value="">No preference</option>
+            {transportOptions.map((option) => (
+              <option key={option} value={option}>{option}</option>
+            ))}
+          </select>
+          <br />
+
+          <label htmlFor="date-style">Date style</label>
+          <select id="date-style" value={dateStyle} onChange={(event) => setDateStyle(event.target.value as DateStyleOption)}>
+            {dateStyleOptions.map((option) => (
+              <option key={option} value={option}>{option}</option>
+            ))}
+          </select>
+          <br />
+
+          <label htmlFor="vibe">Vibe</label>
+          <select id="vibe" value={vibe} onChange={(event) => setVibe(event.target.value as VibeOption)}>
+            {vibeOptions.map((option) => (
+              <option key={option} value={option}>{option}</option>
+            ))}
+          </select>
+          <br />
+
+          <fieldset>
+            <legend>Food preferences (optional multi-select)</legend>
+            {foodOptions.map((option) => (
+              <label key={option} style={{ display: 'block' }}>
+                <input
+                  type="checkbox"
+                  checked={food.includes(option)}
+                  onChange={() => setFood((current) => toggleValue(current, option))}
+                />
+                {option}
+              </label>
+            ))}
+          </fieldset>
+
+          <fieldset>
+            <legend>Avoid (optional multi-select)</legend>
+            {avoidOptions.map((option) => (
+              <label key={option} style={{ display: 'block' }}>
+                <input
+                  type="checkbox"
+                  checked={avoid.includes(option)}
+                  onChange={() => setAvoid((current) => toggleValue(current, option))}
+                />
+                {option}
+              </label>
+            ))}
+          </fieldset>
+
+          <button type="submit" style={{ marginTop: '0.75rem' }}>Generate</button>
+        </form>
+        {generateError ? <p style={{ color: 'crimson' }}>{generateError}</p> : null}
+        {itinerary ? (
+          <div>
+            <p>
+              <strong>Itinerary ID:</strong> {itinerary.itineraryId}
+            </p>
+            <ul>
+              {itinerary.stops.map((stop, index) => (
+                <li key={`${stop.name}-${index}`}>
+                  {stop.name} ({stop.kind})
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </section>
     </main>
   );
 }

@@ -42,18 +42,23 @@ Provider notes
 ## POST /v1/itineraries/generate
 Request
 {
-  "start": { "type": "MRT|AREA|LATLNG", "value": "string", "lat": 1.0, "lng": 103.0 },
+  "origin": {
+    "placeId": "string",
+    "name": "string",
+    "formattedAddress": "string",
+    "lat": 1.300,
+    "lng": 103.800,
+    "types": ["string"]
+  },
   "date": "YYYY-MM-DD",
   "startTime": "HH:mm",
   "durationMin": 120,
   "budget": "$|$$|$$$",
   "dateStyle": "FOOD|ACTIVITY|EVENT|SCENIC|SURPRISE",
   "vibe": "CHILL|ACTIVE|ROMANTIC|ADVENTUROUS",
-  "optional": {
-    "food": ["VEG","HALAL_FRIENDLY","NO_ALCOHOL","NO_SEAFOOD"],
-    "avoid": ["OUTDOOR","PHYSICAL","CROWDED","LOUD"],
-    "transport": "MIN_WALK|TRANSIT|DRIVE_OK|WALK_OK"
-  }
+  "food": ["VEG","HALAL_FRIENDLY","NO_ALCOHOL","NO_SEAFOOD"], // optional
+  "avoid": ["OUTDOOR","PHYSICAL","CROWDED","LOUD"], // optional
+  "transport": "MIN_WALK|TRANSIT|DRIVE_OK|WALK_OK" // optional
 }
 
 Response
