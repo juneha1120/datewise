@@ -1,5 +1,7 @@
 import { BadRequestException, Controller, Get, Query } from '@nestjs/common';
 import {
+  DebugPlaceCandidatesQuerySchema,
+  DebugPlaceCandidatesResponse,
   PlaceDetailsQuerySchema,
   PlaceDetailsResponse,
   PlacesAutocompleteQuerySchema,
@@ -24,6 +26,21 @@ export class PlacesController {
     }
 
     return this.placesService.autocomplete(parsedQuery.data.q);
+  }
+
+  @Get('/debug/candidates')
+  async candidates(@Query('originPlaceId') originPlaceId: string): Promise<DebugPlaceCandidatesResponse> {
+    const parsedQuery = DebugPlaceCandidatesQuerySchema.safeParse({ originPlaceId });
+
+    if (!parsedQuery.success) {
+      throw new BadRequestException({
+        code: 'INVALID_PLACE_CANDIDATES_QUERY',
+        message: 'Invalid places candidates query parameters',
+        issues: parsedQuery.error.issues,
+      });
+    }
+
+    return this.placesService.candidatesNearOrigin(parsedQuery.data.originPlaceId);
   }
 
   @Get('/details')
