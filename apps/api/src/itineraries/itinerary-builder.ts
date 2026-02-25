@@ -202,7 +202,6 @@ export class ItineraryBuilder {
         dateStyle: request.dateStyle,
         vibe: request.vibe,
         avoid: request.avoid,
-        transport: request.transport,
         selected,
         candidates: remaining,
       })[0];
@@ -225,7 +224,6 @@ export class ItineraryBuilder {
       dateStyle: request.dateStyle,
       vibe: request.vibe,
       avoid: request.avoid,
-      transport: request.transport,
       candidates,
     });
 
@@ -248,10 +246,8 @@ export class ItineraryBuilder {
 
       legs = [];
       walkingDistanceM = 0;
-      const transport = request.transport ?? 'TRANSIT';
-
       for (let index = 0; index < selected.length - 1; index += 1) {
-        const leg = await this.directionsService.routeLeg(selected[index], selected[index + 1], transport);
+        const leg = await this.directionsService.routeLeg(selected[index], selected[index + 1]);
         walkingDistanceM += leg.walkingDistanceM;
 
         legs.push({
@@ -280,7 +276,6 @@ export class ItineraryBuilder {
       dateStyle: request.dateStyle,
       vibe: request.vibe,
       avoid: request.avoid,
-      transport: request.transport,
       selected: [],
       candidates: selected,
     });

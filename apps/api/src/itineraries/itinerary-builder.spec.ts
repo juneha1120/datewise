@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import * as assert from 'node:assert/strict';
-import { Candidate, GenerateItineraryRequest, Transport } from '@datewise/shared';
+import { Candidate, GenerateItineraryRequest } from '@datewise/shared';
 import { DirectionsService } from './directions.service';
 import {
   determineStopCount,
@@ -50,8 +50,8 @@ function candidate(externalId: string, overrides: Partial<Candidate> = {}): Cand
 
 function buildDirectionsService(totalWalkingDistanceM: number): DirectionsService {
   return {
-    routeLeg: async (_from: { lat: number; lng: number }, _to: { lat: number; lng: number }, transport: Transport) => ({
-      mode: transport === 'DRIVE_OK' ? 'DRIVE' : transport === 'TRANSIT' ? 'TRANSIT' : 'WALK',
+    routeLeg: async (_from: { lat: number; lng: number }, _to: { lat: number; lng: number }) => ({
+      mode: 'TRANSIT',
       durationMin: 10,
       distanceM: 1_000,
       walkingDistanceM: totalWalkingDistanceM,
@@ -140,7 +140,7 @@ test('itinerary builder retries alternatives when a leg exceeds 2km', async () =
     routeLeg: async () => {
       calls += 1;
       return {
-        mode: 'WALK',
+        mode: 'TRANSIT',
         durationMin: 10,
         distanceM: 2_300,
         walkingDistanceM: 250,
@@ -149,7 +149,7 @@ test('itinerary builder retries alternatives when a leg exceeds 2km', async () =
   } as unknown as DirectionsService;
 
   const builder = new ItineraryBuilder(new ScoringService(), directionsService);
-  const response = await builder.build(buildRequest({ durationMin: 180, transport: 'MIN_WALK' }), [
+  const response = await builder.build(buildRequest({ durationMin: 180 }), [
     candidate('food-anchor', { types: ['restaurant'], tags: ['COZY', 'DATE_NIGHT'] }),
     candidate('backup-1', { types: ['restaurant'], tags: ['COZY'] }),
     candidate('backup-2', { types: ['restaurant'], tags: ['COZY'] }),

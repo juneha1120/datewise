@@ -251,3 +251,61 @@ test('candidatesNearOrigin requests reviews in nearby field mask', async () => {
     global.fetch = originalFetch;
   }
 });
+
+
+test('candidatesNearOrigin filters candidates beyond 2km from origin', async () => {
+  process.env.GOOGLE_MAPS_API_KEY = 'test-token';
+  const service = new PlacesService() as unknown as {
+    candidatesNearOrigin: (originPlaceId: string) => Promise<{ candidates: Array<{ externalId: string }> }>;
+  };
+
+  const originalFetch = global.fetch;
+
+  global.fetch = (async (input: URL | RequestInfo) => {
+    const url = String(input);
+    if (url.includes('/places/') && url.includes('?languageCode=en')) {
+      return new Response(
+        JSON.stringify({
+          id: 'origin',
+          displayName: { text: 'Origin Place' },
+          formattedAddress: 'Singapore',
+          location: { latitude: 1.3103694, longitude: 103.77117 },
+          types: ['establishment'],
+          addressComponents: [{ shortText: 'SG', types: ['country'] }],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    }
+
+    return new Response(
+      JSON.stringify({
+        places: [
+          {
+            id: 'nearby-candidate',
+            displayName: { text: 'Nearby Mall' },
+            formattedAddress: 'Singapore',
+            location: { latitude: 1.314918, longitude: 103.7643089 },
+            types: ['shopping_mall'],
+            addressComponents: [{ shortText: 'SG', types: ['country'] }],
+          },
+          {
+            id: 'far-candidate',
+            displayName: { text: 'Far Mall' },
+            formattedAddress: 'Singapore',
+            location: { latitude: 1.3039288, longitude: 103.8319492 },
+            types: ['shopping_mall'],
+            addressComponents: [{ shortText: 'SG', types: ['country'] }],
+          },
+        ],
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    );
+  }) as typeof fetch;
+
+  try {
+    const result = await service.candidatesNearOrigin('origin');
+    assert.deepEqual(result.candidates.map((candidate) => candidate.externalId), ['nearby-candidate']);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});

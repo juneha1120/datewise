@@ -1,4 +1,4 @@
-import { ItineraryLeg, Transport } from '@datewise/shared';
+import { ItineraryLeg } from '@datewise/shared';
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import { CacheStore, InMemoryCacheStore } from '../places/cache';
@@ -34,19 +34,8 @@ const GoogleDirectionsResponseSchema = z.object({
   error_message: z.string().optional(),
 });
 
-const DIRECTIONS_MODE_BY_TRANSPORT: Record<Transport, string> = {
-  MIN_WALK: 'walking',
-  WALK_OK: 'walking',
-  TRANSIT: 'transit',
-  DRIVE_OK: 'driving',
-};
-
-const LEG_MODE_BY_TRANSPORT: Record<Transport, ItineraryLeg['mode']> = {
-  MIN_WALK: 'WALK',
-  WALK_OK: 'WALK',
-  TRANSIT: 'TRANSIT',
-  DRIVE_OK: 'DRIVE',
-};
+const DIRECTIONS_MODE = 'transit';
+const LEG_MODE: ItineraryLeg['mode'] = 'TRANSIT';
 
 export type RoutedLeg = {
   durationMin: number;
@@ -63,9 +52,8 @@ export class DirectionsService {
   async routeLeg(
     from: { lat: number; lng: number },
     to: { lat: number; lng: number },
-    transport: Transport,
   ): Promise<RoutedLeg> {
-    const mode = DIRECTIONS_MODE_BY_TRANSPORT[transport];
+    const mode = DIRECTIONS_MODE;
     const cacheKey = `directions:${mode}:${from.lat},${from.lng}:${to.lat},${to.lng}`;
     const cached = this.cache.get<RoutedLeg>(cacheKey);
     if (cached) {
@@ -110,8 +98,8 @@ export class DirectionsService {
     const normalized: RoutedLeg = {
       durationMin: Math.max(1, Math.round(firstLeg.duration.value / 60)),
       distanceM: firstLeg.distance.value,
-      mode: LEG_MODE_BY_TRANSPORT[transport],
-      walkingDistanceM: LEG_MODE_BY_TRANSPORT[transport] === 'WALK' ? firstLeg.distance.value : stepWalkingDistanceM,
+      mode: LEG_MODE,
+      walkingDistanceM: stepWalkingDistanceM,
     };
 
     this.cache.set(cacheKey, normalized, DIRECTIONS_CACHE_TTL_MS);

@@ -25,9 +25,9 @@ test('routeLeg maps walking leg from Google directions payload', async () => {
 
   try {
     const service = new DirectionsService();
-    const leg = await service.routeLeg({ lat: 1.3, lng: 103.8 }, { lat: 1.31, lng: 103.82 }, 'MIN_WALK');
+    const leg = await service.routeLeg({ lat: 1.3, lng: 103.8 }, { lat: 1.31, lng: 103.82 });
 
-    assert.equal(leg.mode, 'WALK');
+    assert.equal(leg.mode, 'TRANSIT');
     assert.equal(leg.distanceM, 900);
     assert.equal(leg.walkingDistanceM, 900);
   } finally {
@@ -62,7 +62,7 @@ test('routeLeg sums transit walking steps only', async () => {
 
   try {
     const service = new DirectionsService();
-    const leg = await service.routeLeg({ lat: 1.3, lng: 103.8 }, { lat: 1.31, lng: 103.82 }, 'TRANSIT');
+    const leg = await service.routeLeg({ lat: 1.3, lng: 103.8 }, { lat: 1.31, lng: 103.82 });
 
     assert.equal(leg.mode, 'TRANSIT');
     assert.equal(leg.walkingDistanceM, 550);
