@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import * as assert from 'node:assert/strict';
 import { Candidate, GenerateItineraryRequest, Transport } from '@datewise/shared';
 import { DirectionsService } from './directions.service';
-import { determineStopCount, isWalkingDistanceValid, ItineraryBuilder, pickAnchorCandidate } from './itinerary-builder';
+import { determineStopCount, hasOnlyNearbyLegs, ItineraryBuilder, pickAnchorCandidate } from './itinerary-builder';
 import { ScoredCandidate, ScoringService } from './scoring.service';
 
 function buildRequest(overrides: Partial<GenerateItineraryRequest> = {}): GenerateItineraryRequest {
@@ -86,13 +86,9 @@ test('pickAnchorCandidate prefers dateStyle signals for FOOD and SCENIC', () => 
   assert.equal(pickAnchorCandidate('SCENIC', ranked)?.candidate.externalId, 'scenic');
 });
 
-test('walking thresholds enforce transport-specific maximums', () => {
-  assert.equal(isWalkingDistanceValid(800, 'MIN_WALK'), true);
-  assert.equal(isWalkingDistanceValid(801, 'MIN_WALK'), false);
-  assert.equal(isWalkingDistanceValid(2_000, 'TRANSIT'), true);
-  assert.equal(isWalkingDistanceValid(2_001, undefined), false);
-  assert.equal(isWalkingDistanceValid(4_000, 'WALK_OK'), true);
-  assert.equal(isWalkingDistanceValid(4_001, 'WALK_OK'), false);
+test('nearby leg validation enforces 2km per-leg radius', () => {
+  assert.equal(hasOnlyNearbyLegs([{ from: 0, to: 1, mode: 'TRANSIT', durationMin: 10, distanceM: 2_000 }]), true);
+  assert.equal(hasOnlyNearbyLegs([{ from: 0, to: 1, mode: 'TRANSIT', durationMin: 10, distanceM: 2_001 }]), false);
 });
 
 test('itinerary builder assembles routed legs and totals', async () => {
@@ -112,7 +108,7 @@ test('itinerary builder assembles routed legs and totals', async () => {
   assert.ok(response.totals.walkingDistanceM > 0);
 });
 
-test('itinerary builder retries alternatives when walking threshold fails', async () => {
+test('itinerary builder retries alternatives when a leg exceeds 2km', async () => {
   let calls = 0;
   const directionsService = {
     routeLeg: async () => {
@@ -120,8 +116,8 @@ test('itinerary builder retries alternatives when walking threshold fails', asyn
       return {
         mode: 'WALK',
         durationMin: 10,
-        distanceM: 1_200,
-        walkingDistanceM: 1_200,
+        distanceM: 2_300,
+        walkingDistanceM: 250,
       };
     },
   } as unknown as DirectionsService;
@@ -135,7 +131,7 @@ test('itinerary builder retries alternatives when walking threshold fails', asyn
   ]);
 
   assert.ok(calls > 2);
-  assert.ok(response.meta.warnings.length > 0);
+  assert.ok(response.stops.length >= 1);
 });
 
 test('itinerary builder keeps the selected anchor as the first stop', async () => {

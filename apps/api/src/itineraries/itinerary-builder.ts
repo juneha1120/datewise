@@ -5,7 +5,6 @@ import {
   GenerateItineraryResponse,
   GenerateItineraryResponseSchema,
   ItineraryLeg,
-  Transport,
 } from '@datewise/shared';
 import { Injectable } from '@nestjs/common';
 import { DirectionsService } from './directions.service';
@@ -13,13 +12,6 @@ import { ScoredCandidate, ScoringService } from './scoring.service';
 
 const MAX_CANDIDATE_POOL = 16;
 const MAX_ROUTE_VALIDATION_ATTEMPTS = 4;
-
-const WALKING_THRESHOLD_M: Readonly<Record<Transport, number>> = {
-  MIN_WALK: 800,
-  TRANSIT: 2_000,
-  WALK_OK: 4_000,
-  DRIVE_OK: Number.POSITIVE_INFINITY,
-};
 
 const STYLE_ANCHOR_SIGNALS: Readonly<Record<DateStyleOption, readonly string[]>> = {
   FOOD: ['restaurant', 'cafe', 'meal_takeaway', 'bakery', 'cozy', 'date_night'],
@@ -75,10 +67,11 @@ export function pickAnchorCandidate(dateStyle: DateStyleOption, ranked: readonly
     })[0]?.item;
 }
 
-/** Validates the total walking distance against transport-specific caps. */
-export function isWalkingDistanceValid(walkingDistanceM: number, transport: Transport | undefined): boolean {
-  const threshold = WALKING_THRESHOLD_M[transport ?? 'TRANSIT'];
-  return walkingDistanceM <= threshold;
+const MAX_INTER_STOP_DISTANCE_M = 2_000;
+
+/** Validates that every routed leg stays inside the nearby radius. */
+export function hasOnlyNearbyLegs(legs: readonly ItineraryLeg[]): boolean {
+  return legs.every((leg) => leg.distanceM <= MAX_INTER_STOP_DISTANCE_M);
 }
 
 function buildReason(item: ScoredCandidate, request: GenerateItineraryRequest, stopIndex: number): string {
@@ -182,7 +175,7 @@ export class ItineraryBuilder {
     return selected;
   }
 
-  /** Builds an itinerary with routed legs and walking-threshold validation. */
+  /** Builds an itinerary with routed legs and per-stop proximity validation. */
   async build(request: GenerateItineraryRequest, candidates: readonly Candidate[]): Promise<GenerateItineraryResponse> {
     const initialRanked = this.scoringService.scoreCandidates({
       origin: request.origin,
@@ -223,15 +216,15 @@ export class ItineraryBuilder {
         });
       }
 
-      if (isWalkingDistanceValid(walkingDistanceM, request.transport)) {
+      if (hasOnlyNearbyLegs(legs)) {
         break;
       }
 
       removeRejectedCandidate(selected, candidatePool, rejectedExternalIds);
     }
 
-    if (!isWalkingDistanceValid(walkingDistanceM, request.transport)) {
-      warnings.push('Unable to fully satisfy walking preference with available nearby candidates.');
+    if (!hasOnlyNearbyLegs(legs)) {
+      warnings.push('Unable to keep every stop-to-stop route within 2km using available nearby candidates.');
     }
 
     const finalRanked = this.scoringService.scoreCandidates({
