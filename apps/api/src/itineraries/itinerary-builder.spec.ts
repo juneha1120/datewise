@@ -89,3 +89,30 @@ test('itinerary builder assembles stops with reason text and totals', () => {
   assert.equal(response.totals.durationMin, 240);
   assert.ok(response.legs.length > 0);
 });
+
+test('itinerary builder keeps the selected anchor as the first stop', () => {
+  const builder = new ItineraryBuilder(new ScoringService());
+
+  const response = builder.build(buildRequest({ durationMin: 180, dateStyle: 'FOOD', vibe: 'ACTIVE' }), [
+    candidate('food-anchor', {
+      types: ['restaurant'],
+      tags: ['COZY', 'DATE_NIGHT'],
+      rating: 4.1,
+      reviewCount: 150,
+    }),
+    candidate('high-score-activity', {
+      types: ['museum'],
+      tags: ['ICONIC', 'ARTSY'],
+      rating: 4.9,
+      reviewCount: 4200,
+    }),
+    candidate('backup', {
+      types: ['tourist_attraction'],
+      tags: ['ICONIC'],
+      rating: 4.7,
+      reviewCount: 1800,
+    }),
+  ]);
+
+  assert.equal(response.stops[0]?.name, 'food-anchor');
+});

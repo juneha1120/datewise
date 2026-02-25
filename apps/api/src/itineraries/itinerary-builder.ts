@@ -180,7 +180,13 @@ export class ItineraryBuilder {
       candidates: selected,
     });
 
-    const stops = finalRanked.map((item, index) => ({
+    const finalRankedByExternalId = new Map(finalRanked.map((item) => [item.candidate.externalId, item]));
+
+    const orderedFinalRanked = selected
+      .map((candidate) => finalRankedByExternalId.get(candidate.externalId))
+      .filter((item): item is ScoredCandidate => item !== undefined);
+
+    const stops = orderedFinalRanked.map((item, index) => ({
       kind: item.candidate.kind,
       name: item.candidate.name,
       lat: item.candidate.lat,
