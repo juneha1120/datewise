@@ -33,7 +33,6 @@ Response
 }
 ```
 
-
 Provider notes
 - `/v1/places/autocomplete`, `/v1/places/details`, and `/v1/places/debug/candidates` are backed by Google Places API (Autocomplete + Place Details + Nearby Search).
 - Requests are restricted to Singapore (`country=SG`) with Singapore proximity bias.
@@ -69,6 +68,7 @@ Response
 
 ## POST /v1/itineraries/generate
 Request
+```json
 {
   "origin": {
     "placeId": "string",
@@ -88,8 +88,10 @@ Request
   "avoid": ["OUTDOOR","PHYSICAL","CROWDED","LOUD"], // optional
   "transport": "MIN_WALK|TRANSIT|DRIVE_OK|WALK_OK" // optional
 }
+```
 
 Response
+```json
 {
   "itineraryId": "uuid",
   "stops": [
@@ -113,10 +115,13 @@ Response
   "totals": { "durationMin": 180, "walkingDistanceM": 1200 },
   "meta": { "usedCache": true, "warnings": [] }
 }
+```
 
 ## POST /v1/itineraries/{id}/swap
 Request
+```json
 { "stopIndex": 1, "strategy": "SIMILAR|CLOSER|CHEAPER" }
+```
 
 ## GET /v1/itineraries/{id}
 Returns saved snapshot itinerary
