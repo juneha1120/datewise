@@ -19,7 +19,7 @@ export class ItinerariesController {
   constructor(private readonly itinerariesService: ItinerariesService) {}
 
   @Post('/generate')
-  generate(@Body() body: unknown): GenerateItineraryResponse {
+  async generate(@Body() body: unknown): Promise<GenerateItineraryResponse> {
     const parsedBody = GenerateItineraryRequestSchema.safeParse(body);
 
     if (!parsedBody.success) {
@@ -30,6 +30,6 @@ export class ItinerariesController {
     }
 
     const request: GenerateItineraryRequest = parsedBody.data;
-    return this.itinerariesService.generateStubItinerary(request);
+    return this.itinerariesService.generateItinerary(request);
   }
 }
