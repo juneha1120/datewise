@@ -38,7 +38,7 @@ Provider notes
 - Requests are restricted to Singapore (`country=SG`) with Singapore proximity bias.
 - External calls use timeout <= 5s and max 2 retries.
 - Itinerary routing (`legs[]` + `totals.walkingDistanceM`) is computed with Google Directions (backend-only API key) and cached before external calls.
-- Itinerary assembly enforces a strict nearby cap: candidates farther than 2km from the chosen origin are filtered out, and bounded retries run when any routed stop-to-stop leg exceeds 2km.
+- Itinerary assembly enforces strict nearby caps during candidate generation: candidates farther than 2km from origin are filtered out, and each next-stop candidate is pre-screened to stay within 2km of the prior stop before scoring; bounded retries still run if routed legs exceed 2km.
 - Candidate tags are deterministic heuristic labels from place types, price level, and snippets (e.g. `ARTSY`, `ROMANTIC`, `LOUD`).
 
 

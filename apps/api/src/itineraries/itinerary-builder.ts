@@ -85,6 +85,26 @@ function isRouteValidForStopCount(legs: readonly ItineraryLeg[], selectedCount: 
   return selectedCount >= stopCount && hasOnlyNearbyLegs(legs);
 }
 
+function haversineDistanceMeters(from: { lat: number; lng: number }, to: { lat: number; lng: number }): number {
+  const earthRadiusMeters = 6_371_000;
+  const toRadians = (value: number): number => (value * Math.PI) / 180;
+
+  const latDistanceRad = toRadians(to.lat - from.lat);
+  const lngDistanceRad = toRadians(to.lng - from.lng);
+  const fromLatRad = toRadians(from.lat);
+  const toLatRad = toRadians(to.lat);
+
+  const a =
+    Math.sin(latDistanceRad / 2) * Math.sin(latDistanceRad / 2) +
+    Math.cos(fromLatRad) * Math.cos(toLatRad) * Math.sin(lngDistanceRad / 2) * Math.sin(lngDistanceRad / 2);
+
+  return Math.round(earthRadiusMeters * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))));
+}
+
+function isWithinNearbyRadius(from: { lat: number; lng: number }, to: { lat: number; lng: number }): boolean {
+  return haversineDistanceMeters(from, to) <= MAX_NEARBY_DISTANCE_M;
+}
+
 function buildReason(item: ScoredCandidate, request: GenerateItineraryRequest, stopIndex: number): string {
   const snippets: string[] = [];
 
@@ -157,9 +177,20 @@ export class ItineraryBuilder {
     }
 
     while (selected.length < stopCount) {
+      const lastSelected = selected[selected.length - 1];
       const remaining = filteredPool
         .map((item) => item.candidate)
-        .filter((candidate) => !selected.some((picked) => picked.externalId === candidate.externalId));
+        .filter((candidate) => !selected.some((picked) => picked.externalId === candidate.externalId))
+        .filter((candidate) => {
+          if (!lastSelected) {
+            return true;
+          }
+
+          return isWithinNearbyRadius(
+            { lat: lastSelected.lat, lng: lastSelected.lng },
+            { lat: candidate.lat, lng: candidate.lng },
+          );
+        });
 
       if (remaining.length === 0) {
         break;

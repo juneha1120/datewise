@@ -160,6 +160,43 @@ test('itinerary builder retries alternatives when a leg exceeds 2km', async () =
   assert.ok(response.meta.warnings.some((warning) => warning.includes('within 2km')));
 });
 
+
+
+test('itinerary builder pre-filters next-stop candidates by 2km leg radius', async () => {
+  const directionsService = {
+    routeLeg: async (from: { lat: number; lng: number }, to: { lat: number; lng: number }) => ({
+      mode: 'TRANSIT',
+      durationMin: 10,
+      distanceM: Math.abs(from.lng - to.lng) > 0.02 ? 3_000 : 900,
+      walkingDistanceM: 250,
+    }),
+  } as unknown as DirectionsService;
+
+  const builder = new ItineraryBuilder(new ScoringService(), directionsService);
+  const response = await builder.build(buildRequest({ durationMin: 180 }), [
+    candidate('anchor-east', {
+      types: ['restaurant'],
+      tags: ['COZY', 'DATE_NIGHT'],
+      lat: 1.3,
+      lng: 103.84,
+    }),
+    candidate('near-east', {
+      lat: 1.301,
+      lng: 103.841,
+      rating: 4.1,
+    }),
+    candidate('far-west-high-score', {
+      lat: 1.3,
+      lng: 103.868,
+      rating: 4.9,
+      reviewCount: 9000,
+      tags: ['ICONIC', 'DATE_NIGHT'],
+    }),
+  ]);
+
+  assert.ok(!response.stops.some((stop) => stop.name === 'far-west-high-score'));
+});
+
 test('itinerary builder keeps the selected anchor as the first stop', async () => {
   const builder = new ItineraryBuilder(new ScoringService(), buildDirectionsService(200));
 
