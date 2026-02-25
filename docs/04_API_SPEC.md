@@ -41,6 +41,7 @@ Provider notes
 - Itinerary assembly enforces strict nearby caps during candidate generation: candidates farther than 2km from origin are filtered out, and each next-stop candidate is pre-screened to stay within 2km of the prior stop before scoring; bounded retries still run if routed legs exceed 2km.
 - `/v1/places/debug/candidates` now returns only candidates within 2km of the resolved origin coordinates.
 - For itinerary generation, backend resolves canonical origin coordinates from `origin.placeId` and uses those coordinates for distance filtering/scoring.
+- Nearby candidate generation does not enforce an `includedTypes` whitelist, so Google Nearby can return broader place categories before Datewise scoring/filtering.
 - Candidate tags are deterministic heuristic labels from place types, price level, and snippets (e.g. `ARTSY`, `ROMANTIC`, `LOUD`).
 
 
