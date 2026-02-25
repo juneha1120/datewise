@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import * as assert from 'node:assert/strict';
-import { Candidate, GenerateItineraryRequest } from '@datewise/shared';
-import { determineStopCount, ItineraryBuilder, pickAnchorCandidate } from './itinerary-builder';
+import { Candidate, GenerateItineraryRequest, Transport } from '@datewise/shared';
+import { DirectionsService } from './directions.service';
+import { determineStopCount, isWalkingDistanceValid, ItineraryBuilder, pickAnchorCandidate } from './itinerary-builder';
 import { ScoredCandidate, ScoringService } from './scoring.service';
 
 function buildRequest(overrides: Partial<GenerateItineraryRequest> = {}): GenerateItineraryRequest {
@@ -41,6 +42,17 @@ function candidate(externalId: string, overrides: Partial<Candidate> = {}): Cand
   };
 }
 
+function buildDirectionsService(totalWalkingDistanceM: number): DirectionsService {
+  return {
+    routeLeg: async (_from: { lat: number; lng: number }, _to: { lat: number; lng: number }, transport: Transport) => ({
+      mode: transport === 'DRIVE_OK' ? 'DRIVE' : transport === 'TRANSIT' ? 'TRANSIT' : 'WALK',
+      durationMin: 10,
+      distanceM: 1_000,
+      walkingDistanceM: totalWalkingDistanceM,
+    }),
+  } as unknown as DirectionsService;
+}
+
 test('determineStopCount maps 2h/3h/4h windows to 2/3/4 stops', () => {
   assert.equal(determineStopCount(120, 8), 2);
   assert.equal(determineStopCount(180, 8), 3);
@@ -74,10 +86,19 @@ test('pickAnchorCandidate prefers dateStyle signals for FOOD and SCENIC', () => 
   assert.equal(pickAnchorCandidate('SCENIC', ranked)?.candidate.externalId, 'scenic');
 });
 
-test('itinerary builder assembles stops with reason text and totals', () => {
-  const builder = new ItineraryBuilder(new ScoringService());
+test('walking thresholds enforce transport-specific maximums', () => {
+  assert.equal(isWalkingDistanceValid(800, 'MIN_WALK'), true);
+  assert.equal(isWalkingDistanceValid(801, 'MIN_WALK'), false);
+  assert.equal(isWalkingDistanceValid(2_000, 'TRANSIT'), true);
+  assert.equal(isWalkingDistanceValid(2_001, undefined), false);
+  assert.equal(isWalkingDistanceValid(4_000, 'WALK_OK'), true);
+  assert.equal(isWalkingDistanceValid(4_001, 'WALK_OK'), false);
+});
 
-  const response = builder.build(buildRequest({ durationMin: 240, dateStyle: 'SCENIC' }), [
+test('itinerary builder assembles routed legs and totals', async () => {
+  const builder = new ItineraryBuilder(new ScoringService(), buildDirectionsService(300));
+
+  const response = await builder.build(buildRequest({ durationMin: 240, dateStyle: 'SCENIC' }), [
     candidate('scenic-1', { types: ['park'], tags: ['NATURE', 'ROMANTIC'] }),
     candidate('scenic-2', { types: ['tourist_attraction'], tags: ['ICONIC'] }),
     candidate('food-1', { types: ['restaurant'], tags: ['COZY'] }),
@@ -88,12 +109,39 @@ test('itinerary builder assembles stops with reason text and totals', () => {
   assert.ok(response.stops.every((stop) => stop.reason.length > 0));
   assert.equal(response.totals.durationMin, 240);
   assert.ok(response.legs.length > 0);
+  assert.ok(response.totals.walkingDistanceM > 0);
 });
 
-test('itinerary builder keeps the selected anchor as the first stop', () => {
-  const builder = new ItineraryBuilder(new ScoringService());
+test('itinerary builder retries alternatives when walking threshold fails', async () => {
+  let calls = 0;
+  const directionsService = {
+    routeLeg: async () => {
+      calls += 1;
+      return {
+        mode: 'WALK',
+        durationMin: 10,
+        distanceM: 1_200,
+        walkingDistanceM: 1_200,
+      };
+    },
+  } as unknown as DirectionsService;
 
-  const response = builder.build(buildRequest({ durationMin: 180, dateStyle: 'FOOD', vibe: 'ACTIVE' }), [
+  const builder = new ItineraryBuilder(new ScoringService(), directionsService);
+  const response = await builder.build(buildRequest({ durationMin: 180, transport: 'MIN_WALK' }), [
+    candidate('food-anchor', { types: ['restaurant'], tags: ['COZY', 'DATE_NIGHT'] }),
+    candidate('backup-1', { types: ['restaurant'], tags: ['COZY'] }),
+    candidate('backup-2', { types: ['restaurant'], tags: ['COZY'] }),
+    candidate('backup-3', { types: ['restaurant'], tags: ['COZY'] }),
+  ]);
+
+  assert.ok(calls > 2);
+  assert.ok(response.meta.warnings.length > 0);
+});
+
+test('itinerary builder keeps the selected anchor as the first stop', async () => {
+  const builder = new ItineraryBuilder(new ScoringService(), buildDirectionsService(200));
+
+  const response = await builder.build(buildRequest({ durationMin: 180, dateStyle: 'FOOD', vibe: 'ACTIVE' }), [
     candidate('food-anchor', {
       types: ['restaurant'],
       tags: ['COZY', 'DATE_NIGHT'],

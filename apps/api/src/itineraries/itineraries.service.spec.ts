@@ -3,6 +3,7 @@ import * as assert from 'node:assert/strict';
 import { Candidate } from '@datewise/shared';
 import { PlacesService } from '../places/places.service';
 import { ItineraryBuilder } from './itinerary-builder';
+import { DirectionsService } from './directions.service';
 import { ScoringService } from './scoring.service';
 import { ItinerariesService } from './itineraries.service';
 
@@ -31,7 +32,16 @@ test('generateItinerary returns places-only stops from nearby candidates', async
     }),
   } as unknown as PlacesService;
 
-  const service = new ItinerariesService(mockedPlacesService, new ItineraryBuilder(new ScoringService()));
+  const mockedDirectionsService = {
+    routeLeg: async () => ({
+      mode: 'TRANSIT',
+      durationMin: 10,
+      distanceM: 1_000,
+      walkingDistanceM: 400,
+    }),
+  } as unknown as DirectionsService;
+
+  const service = new ItinerariesService(mockedPlacesService, new ItineraryBuilder(new ScoringService(), mockedDirectionsService));
 
   const itinerary = await service.generateItinerary({
     origin: {

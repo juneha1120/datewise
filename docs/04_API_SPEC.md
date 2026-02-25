@@ -37,6 +37,8 @@ Provider notes
 - `/v1/places/autocomplete`, `/v1/places/details`, and `/v1/places/debug/candidates` are backed by Google Places API (Autocomplete + Place Details + Nearby Search).
 - Requests are restricted to Singapore (`country=SG`) with Singapore proximity bias.
 - External calls use timeout <= 5s and max 2 retries.
+- Itinerary routing (`legs[]` + `totals.walkingDistanceM`) is computed with Google Directions (backend-only API key) and cached before external calls.
+- Walking preference caps are enforced on routed walking distance (`MIN_WALK<=800m`, `TRANSIT<=2000m`, `WALK_OK<=4000m`) with bounded candidate retries.
 - Candidate tags are deterministic heuristic labels from place types, price level, and snippets (e.g. `ARTSY`, `ROMANTIC`, `LOUD`).
 
 

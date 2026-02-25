@@ -13,6 +13,6 @@ export class ItinerariesService {
   /** Generates a places-only itinerary from nearby Google candidates. */
   async generateItinerary(request: GenerateItineraryRequest): Promise<GenerateItineraryResponse> {
     const candidateResponse = await this.placesService.candidatesNearOrigin(request.origin.placeId);
-    return this.itineraryBuilder.build(request, candidateResponse.candidates);
+    return await this.itineraryBuilder.build(request, candidateResponse.candidates);
   }
 }
