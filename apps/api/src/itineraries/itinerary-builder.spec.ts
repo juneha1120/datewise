@@ -177,8 +177,8 @@ test('itinerary builder pre-filters next-stop candidates by 2km leg radius', asy
     candidate('anchor-east', {
       types: ['restaurant'],
       tags: ['COZY', 'DATE_NIGHT'],
-      lat: 1.3,
-      lng: 103.84,
+      lat: 1.294,
+      lng: 103.846,
     }),
     candidate('near-east', {
       lat: 1.301,
@@ -222,4 +222,46 @@ test('itinerary builder keeps the selected anchor as the first stop', async () =
   ]);
 
   assert.equal(response.stops[0]?.name, 'food-anchor');
+});
+
+test('itinerary builder does not accept under-filled stop selection as route-valid', async () => {
+  let routeCalls = 0;
+  const directionsService = {
+    routeLeg: async () => {
+      routeCalls += 1;
+      return {
+        mode: 'TRANSIT',
+        durationMin: 10,
+        distanceM: 500,
+        walkingDistanceM: 0,
+      };
+    },
+  } as unknown as DirectionsService;
+
+  const builder = new ItineraryBuilder(new ScoringService(), directionsService);
+  const response = await builder.build(buildRequest({ durationMin: 180, dateStyle: 'FOOD' }), [
+    candidate('anchor', {
+      types: ['restaurant'],
+      tags: ['DATE_NIGHT', 'COZY'],
+      lat: 1.294,
+      lng: 103.846,
+    }),
+    candidate('too-far-1', {
+      types: ['restaurant'],
+      tags: ['COZY'],
+      lat: 1.2595,
+      lng: 103.846,
+    }),
+    candidate('too-far-2', {
+      types: ['restaurant'],
+      tags: ['COZY'],
+      lat: 1.2598,
+      lng: 103.847,
+    }),
+  ]);
+
+  assert.equal(routeCalls, 0);
+  assert.equal(response.stops.length, 1);
+  assert.ok(response.meta.warnings.some((warning) => warning.includes('within 2km')));
+  assert.ok(response.meta.warnings.some((warning) => warning.includes('target stop count')));
 });

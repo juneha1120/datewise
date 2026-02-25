@@ -82,7 +82,7 @@ export function filterCandidatesWithinOriginRadius(
 }
 
 function isRouteValidForStopCount(legs: readonly ItineraryLeg[], selectedCount: number, stopCount: number): boolean {
-  return selectedCount >= stopCount && hasOnlyNearbyLegs(legs);
+  return selectedCount === stopCount && hasOnlyNearbyLegs(legs);
 }
 
 function haversineDistanceMeters(from: { lat: number; lng: number }, to: { lat: number; lng: number }): number {
@@ -243,6 +243,11 @@ export class ItineraryBuilder {
 
     for (let attempt = 0; attempt < MAX_ROUTE_VALIDATION_ATTEMPTS; attempt += 1) {
       selected = this.pickStops(request, candidatePool, stopCount, rejectedExternalIds);
+
+      if (selected.length !== stopCount) {
+        removeRejectedCandidate(selected, candidatePool, rejectedExternalIds);
+        continue;
+      }
 
       legs = [];
       walkingDistanceM = 0;
