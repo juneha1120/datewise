@@ -2,7 +2,13 @@ import { test } from 'node:test';
 import * as assert from 'node:assert/strict';
 import { Candidate, GenerateItineraryRequest, Transport } from '@datewise/shared';
 import { DirectionsService } from './directions.service';
-import { determineStopCount, hasOnlyNearbyLegs, ItineraryBuilder, pickAnchorCandidate } from './itinerary-builder';
+import {
+  determineStopCount,
+  filterCandidatesWithinOriginRadius,
+  hasOnlyNearbyLegs,
+  ItineraryBuilder,
+  pickAnchorCandidate,
+} from './itinerary-builder';
 import { ScoredCandidate, ScoringService } from './scoring.service';
 
 function buildRequest(overrides: Partial<GenerateItineraryRequest> = {}): GenerateItineraryRequest {
@@ -91,6 +97,26 @@ test('nearby leg validation enforces 2km per-leg radius', () => {
   assert.equal(hasOnlyNearbyLegs([{ from: 0, to: 1, mode: 'TRANSIT', durationMin: 10, distanceM: 2_001 }]), false);
 });
 
+test('origin radius filter removes candidates beyond 2km', () => {
+  const ranked = [
+    {
+      candidate: candidate('near'),
+      distanceM: 1_500,
+      score: 0.8,
+      breakdown: { qualityScore: 0.8, fitScore: 0.8, styleVibeScore: 0.8, avoidPenalty: 0, diversityPenalty: 0 },
+    },
+    {
+      candidate: candidate('far'),
+      distanceM: 10_500,
+      score: 0.99,
+      breakdown: { qualityScore: 0.9, fitScore: 0.9, styleVibeScore: 0.9, avoidPenalty: 0, diversityPenalty: 0 },
+    },
+  ] satisfies ScoredCandidate[];
+
+  const filtered = filterCandidatesWithinOriginRadius(ranked);
+  assert.deepEqual(filtered.map((item) => item.candidate.externalId), ['near']);
+});
+
 test('itinerary builder assembles routed legs and totals', async () => {
   const builder = new ItineraryBuilder(new ScoringService(), buildDirectionsService(300));
 
@@ -131,7 +157,7 @@ test('itinerary builder retries alternatives when a leg exceeds 2km', async () =
   ]);
 
   assert.ok(calls > 2);
-  assert.ok(response.stops.length >= 1);
+  assert.ok(response.meta.warnings.some((warning) => warning.includes('within 2km')));
 });
 
 test('itinerary builder keeps the selected anchor as the first stop', async () => {

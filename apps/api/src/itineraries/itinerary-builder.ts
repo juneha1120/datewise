@@ -12,6 +12,7 @@ import { ScoredCandidate, ScoringService } from './scoring.service';
 
 const MAX_CANDIDATE_POOL = 16;
 const MAX_ROUTE_VALIDATION_ATTEMPTS = 4;
+const MAX_NEARBY_DISTANCE_M = 2_000;
 
 const STYLE_ANCHOR_SIGNALS: Readonly<Record<DateStyleOption, readonly string[]>> = {
   FOOD: ['restaurant', 'cafe', 'meal_takeaway', 'bakery', 'cozy', 'date_night'],
@@ -67,11 +68,21 @@ export function pickAnchorCandidate(dateStyle: DateStyleOption, ranked: readonly
     })[0]?.item;
 }
 
-const MAX_INTER_STOP_DISTANCE_M = 2_000;
-
 /** Validates that every routed leg stays inside the nearby radius. */
 export function hasOnlyNearbyLegs(legs: readonly ItineraryLeg[]): boolean {
-  return legs.every((leg) => leg.distanceM <= MAX_INTER_STOP_DISTANCE_M);
+  return legs.every((leg) => leg.distanceM <= MAX_NEARBY_DISTANCE_M);
+}
+
+/** Ensures we have enough nearby candidates around the selected start point. */
+export function filterCandidatesWithinOriginRadius(
+  ranked: readonly ScoredCandidate[],
+  maxDistanceM: number = MAX_NEARBY_DISTANCE_M,
+): ScoredCandidate[] {
+  return ranked.filter((item) => item.distanceM <= maxDistanceM);
+}
+
+function isRouteValidForStopCount(legs: readonly ItineraryLeg[], selectedCount: number, stopCount: number): boolean {
+  return selectedCount >= stopCount && hasOnlyNearbyLegs(legs);
 }
 
 function buildReason(item: ScoredCandidate, request: GenerateItineraryRequest, stopIndex: number): string {
@@ -187,10 +198,15 @@ export class ItineraryBuilder {
       candidates,
     });
 
-    const candidatePool = initialRanked.slice(0, MAX_CANDIDATE_POOL);
+    const nearbyRanked = filterCandidatesWithinOriginRadius(initialRanked);
+    const candidatePool = nearbyRanked.slice(0, MAX_CANDIDATE_POOL);
     const stopCount = determineStopCount(request.durationMin, candidatePool.length);
     const warnings: string[] = [];
     const rejectedExternalIds = new Set<string>();
+
+    if (nearbyRanked.length < initialRanked.length) {
+      warnings.push('Filtered out far candidates to enforce a strict 2km cap from your selected starting point.');
+    }
 
     let selected: Candidate[] = [];
     let legs: ItineraryLeg[] = [];
@@ -216,14 +232,14 @@ export class ItineraryBuilder {
         });
       }
 
-      if (hasOnlyNearbyLegs(legs)) {
+      if (isRouteValidForStopCount(legs, selected.length, stopCount)) {
         break;
       }
 
       removeRejectedCandidate(selected, candidatePool, rejectedExternalIds);
     }
 
-    if (!hasOnlyNearbyLegs(legs)) {
+    if (!isRouteValidForStopCount(legs, selected.length, stopCount)) {
       warnings.push('Unable to keep every stop-to-stop route within 2km using available nearby candidates.');
     }
 
