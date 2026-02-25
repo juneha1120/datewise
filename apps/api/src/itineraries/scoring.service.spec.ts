@@ -112,3 +112,28 @@ test('diversity penalty reduces score for repeated tags/types from selected cand
   assert.ok(repeat.breakdown.diversityPenalty > diverse.breakdown.diversityPenalty);
   assert.ok(repeat.score < diverse.score);
 });
+
+test('diversity penalty ignores ubiquitous place types', () => {
+  const ranked = service.scoreCandidates({
+    origin: { lat: 1.29027, lng: 103.851959 },
+    budget: '$$',
+    dateStyle: 'ACTIVITY',
+    vibe: 'ACTIVE',
+    selected: [
+      candidate({ externalId: 'picked-1', types: ['point_of_interest', 'establishment', 'museum'] }),
+      candidate({ externalId: 'picked-2', types: ['point_of_interest', 'establishment', 'park'] }),
+    ],
+    candidates: [
+      candidate({ externalId: 'ubiquitous-only', types: ['point_of_interest', 'establishment', 'cafe'] }),
+      candidate({ externalId: 'meaningful-repeat', types: ['point_of_interest', 'establishment', 'museum'] }),
+    ],
+  });
+
+  const ubiquitousOnly = ranked.find((item) => item.candidate.externalId === 'ubiquitous-only');
+  const meaningfulRepeat = ranked.find((item) => item.candidate.externalId === 'meaningful-repeat');
+
+  assert.ok(ubiquitousOnly);
+  assert.ok(meaningfulRepeat);
+  assert.equal(ubiquitousOnly.breakdown.diversityPenalty, 0);
+  assert.ok(meaningfulRepeat.breakdown.diversityPenalty > ubiquitousOnly.breakdown.diversityPenalty);
+});

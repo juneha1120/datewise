@@ -79,12 +79,22 @@ const AVOID_TO_SIGNALS: Readonly<Record<AvoidPreference, readonly string[]>> = {
   LOUD: ['LOUD', 'night_club', 'bar'],
 };
 
+const UBIQUITOUS_PLACE_TYPES = new Set<string>(['point_of_interest', 'establishment']);
+
 function clamp01(value: number): number {
   return Math.min(1, Math.max(0, value));
 }
 
 function normalizeSignals(values: readonly string[] | undefined): Set<string> {
   return new Set((values ?? []).map((value) => value.trim().toLowerCase()));
+}
+
+function normalizeDiversityTypes(values: readonly string[] | undefined): Set<string> {
+  return new Set(
+    Array.from(normalizeSignals(values)).filter((type) => {
+      return !UBIQUITOUS_PLACE_TYPES.has(type);
+    }),
+  );
 }
 
 function haversineDistanceMeters(
@@ -115,7 +125,7 @@ export class ScoringService {
     const seenTagCounts = new Map<string, number>();
 
     for (const selected of input.selected ?? []) {
-      for (const type of normalizeSignals(selected.types)) {
+      for (const type of normalizeDiversityTypes(selected.types)) {
         seenTypeCounts.set(type, (seenTypeCounts.get(type) ?? 0) + 1);
       }
 
@@ -232,7 +242,7 @@ export class ScoringService {
     seenTypeCounts: ReadonlyMap<string, number>,
     seenTagCounts: ReadonlyMap<string, number>,
   ): number {
-    const typeRepeats = Array.from(normalizeSignals(candidate.types)).map((type) => seenTypeCounts.get(type) ?? 0);
+    const typeRepeats = Array.from(normalizeDiversityTypes(candidate.types)).map((type) => seenTypeCounts.get(type) ?? 0);
     const tagRepeats = Array.from(normalizeSignals(candidate.tags)).map((tag) => seenTagCounts.get(tag) ?? 0);
 
     const maxRepeatCount = Math.max(0, ...typeRepeats, ...tagRepeats);
