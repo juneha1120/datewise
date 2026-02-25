@@ -56,14 +56,8 @@ test('style and vibe matches boost the styleVibe score', () => {
     dateStyle: 'SCENIC',
     vibe: 'ROMANTIC',
     candidates: [
-      candidate({
-        externalId: 'match',
-        tags: ['ROMANTIC', 'NATURE', 'DATE_NIGHT'],
-      }),
-      candidate({
-        externalId: 'mismatch',
-        tags: ['ARTSY'],
-      }),
+      candidate({ externalId: 'match', tags: ['ROMANTIC', 'NATURE', 'DATE_NIGHT'] }),
+      candidate({ externalId: 'mismatch', tags: ['ARTSY'] }),
     ],
   });
 

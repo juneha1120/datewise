@@ -36,6 +36,7 @@ export type ScoreCandidatesInput = {
  * Weighted sum keeps the score explainable and bounded:
  * total = 0.30*quality + 0.30*fit + 0.25*styleVibe - 0.10*avoidPenalty - 0.05*diversityPenalty
  */
+// Weights bias toward objective quality/fit while still allowing preference tuning signals.
 const SCORING_WEIGHTS = {
   quality: 0.3,
   fit: 0.3,
@@ -90,6 +91,7 @@ function normalizeSignals(values: readonly string[] | undefined): Set<string> {
 }
 
 function normalizeDiversityTypes(values: readonly string[] | undefined): Set<string> {
+  // Ignore high-frequency Google taxonomy buckets that would create false diversity penalties.
   return new Set(
     Array.from(normalizeSignals(values)).filter((type) => {
       return !UBIQUITOUS_PLACE_TYPES.has(type);
@@ -120,6 +122,9 @@ function haversineDistanceMeters(
 
 @Injectable()
 export class ScoringService {
+  /**
+   * Scores and ranks candidates deterministically so itinerary assembly remains stable.
+   */
   scoreCandidates(input: ScoreCandidatesInput): ScoredCandidate[] {
     const seenTypeCounts = new Map<string, number>();
     const seenTagCounts = new Map<string, number>();

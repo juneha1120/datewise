@@ -109,6 +109,7 @@ const priceLevelMap: Record<string, number> = {
   PRICE_LEVEL_VERY_EXPENSIVE: 4,
 };
 
+/** Normalizes Google autocomplete payloads into the shared API contract. */
 export function googleAutocompleteToResponse(payload: unknown): PlacesAutocompleteResponse {
   const parsed = GoogleAutocompleteResponseSchema.safeParse(payload);
   if (!parsed.success) {
@@ -157,6 +158,7 @@ export function googleAutocompleteToResponse(payload: unknown): PlacesAutocomple
   return normalized.data;
 }
 
+/** Normalizes Google place details and enforces Singapore-only scope. */
 export function googleDetailsToResponse(payload: unknown): PlaceDetailsResponse {
   const parsed = GooglePlaceDetailsResponseSchema.safeParse(payload);
   if (!parsed.success) {
@@ -170,6 +172,7 @@ export function googleDetailsToResponse(payload: unknown): PlaceDetailsResponse 
     );
   }
 
+  // Datewise only serves Singapore itineraries, so we fail fast on out-of-scope results.
   if (!isSingaporeAddress(parsed.data.addressComponents)) {
     throw new HttpException(
       {
@@ -213,6 +216,7 @@ export function googleDetailsToResponse(payload: unknown): PlaceDetailsResponse 
   return normalized.data;
 }
 
+/** Converts nearby results into scored candidates with deterministic tag inference. */
 export function googleNearbyToCandidates(
   payload: unknown,
   taggingService: TaggingService = new TaggingService(),
@@ -259,6 +263,7 @@ export function googleNearbyToCandidates(
     });
 }
 
+// Country component checks are more reliable than formattedAddress text parsing.
 function isSingaporeAddress(components: Array<{ shortText?: string; types: string[] }>): boolean {
   return components.some(
     (component) => component.types.includes('country') && component.shortText?.toUpperCase() === SINGAPORE_COUNTRY_CODE,
@@ -272,6 +277,7 @@ export class PlacesService {
   constructor(private readonly taggingService: TaggingService = new TaggingService()) {}
 
   async autocomplete(query: string): Promise<PlacesAutocompleteResponse> {
+    // Prefixes segregate cache entries by endpoint shape so keys cannot collide.
     const cacheKey = `autocomplete:${query}`;
     const cached = this.cache.get<PlacesAutocompleteResponse>(cacheKey);
     if (cached) {
@@ -305,6 +311,7 @@ export class PlacesService {
   }
 
   async details(placeId: string): Promise<PlaceDetailsResponse> {
+    // Details are reused by nearby search; a longer TTL reduces duplicate place lookups.
     const cacheKey = `details:${placeId}`;
     const cached = this.cache.get<PlaceDetailsResponse>(cacheKey);
     if (cached) {

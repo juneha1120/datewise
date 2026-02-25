@@ -1,5 +1,5 @@
-declare const test: (name: string, fn: () => void | Promise<void>) => void;
-import * as assert from 'assert/strict';
+import { test } from 'node:test';
+import * as assert from 'node:assert/strict';
 import { BadRequestException } from '@nestjs/common';
 import { ItinerariesController } from './itineraries.controller';
 import { ItinerariesService } from './itineraries.service';
@@ -9,10 +9,7 @@ test('generate throws BadRequestException with mapped errors for invalid payload
   const controller = new ItinerariesController(service);
 
   await assert.rejects(
-    async () =>
-      controller.generate({
-        date: '2026/01/01',
-      }),
+    async () => controller.generate({ date: '2026/01/01' }),
     (error: unknown) => {
       assert.ok(error instanceof BadRequestException);
       if (!(error instanceof BadRequestException)) {
