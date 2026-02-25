@@ -39,6 +39,7 @@ Provider notes
 - External calls use timeout <= 5s and max 2 retries.
 - Itinerary routing (`legs[]` + `totals.walkingDistanceM`) is computed with Google Directions (backend-only API key) and cached before external calls.
 - Itinerary assembly enforces strict nearby caps during candidate generation: candidates farther than 2km from origin are filtered out, and each next-stop candidate is pre-screened to stay within 2km of the prior stop before scoring; bounded retries still run if routed legs exceed 2km.
+- For itinerary generation, backend resolves canonical origin coordinates from `origin.placeId` and uses those coordinates for distance filtering/scoring.
 - Candidate tags are deterministic heuristic labels from place types, price level, and snippets (e.g. `ARTSY`, `ROMANTIC`, `LOUD`).
 
 
