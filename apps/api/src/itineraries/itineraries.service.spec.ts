@@ -1,5 +1,5 @@
-declare const test: (name: string, fn: () => void | Promise<void>) => void;
-import * as assert from 'assert/strict';
+import { test } from 'node:test';
+import * as assert from 'node:assert/strict';
 import { ItinerariesService } from './itineraries.service';
 
 test('generateStubItinerary includes requested selection tags in stub response', () => {

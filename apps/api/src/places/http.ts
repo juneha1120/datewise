@@ -7,11 +7,16 @@ const logger = new Logger('HttpClient');
 
 type RequestOptions = Omit<RequestInit, 'signal'>;
 
+/**
+ * Fetches JSON with bounded retries so upstream instability does not leak raw fetch errors
+ * to API consumers.
+ */
 export async function fetchJsonWithRetry<T>(url: string, init?: RequestOptions): Promise<T> {
   let lastError: unknown;
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
     const controller = new AbortController();
+    // Keep outbound calls short so a single provider timeout cannot stall itinerary generation.
     const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
 
     try {

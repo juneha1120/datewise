@@ -7,7 +7,7 @@
     "build": "npm run clean && nest build",
     "start": "node dist/main.js",
     "typecheck": "npm run build --workspace @datewise/shared && tsc --noEmit",
-    "test": "npm run build && node --test dist/**/*.spec.js",
+    "test": "npm run build --workspace @datewise/shared && npm run clean && tsc -p tsconfig.json && node --test dist/**/*.spec.js",
     "clean": "node -e \"const fs=require('node:fs'); for (const p of ['dist','tsconfig.tsbuildinfo','tsconfig.build.tsbuildinfo']) fs.rmSync(p,{ recursive: true, force: true });\""
   },
   "dependencies": {
