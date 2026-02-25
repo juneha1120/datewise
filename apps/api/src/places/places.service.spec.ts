@@ -247,6 +247,9 @@ test('candidatesNearOrigin requests reviews in nearby field mask', async () => {
     const nearbyCall = calls[1];
     const fieldMask = (nearbyCall.init?.headers as Record<string, string>)['X-Goog-FieldMask'];
     assert.ok(fieldMask.includes('places.reviews.text.text'));
+
+    const nearbyBody = JSON.parse(String(nearbyCall.init?.body ?? '{}')) as Record<string, unknown>;
+    assert.equal('includedTypes' in nearbyBody, false);
   } finally {
     global.fetch = originalFetch;
   }
