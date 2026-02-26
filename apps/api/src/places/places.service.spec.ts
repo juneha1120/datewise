@@ -310,3 +310,66 @@ test('candidatesNearOrigin filters candidates beyond 2km from origin', async () 
     global.fetch = originalFetch;
   }
 });
+
+
+test('candidatesNearOrigin falls back when nearby includedTypes request is rejected', async () => {
+  process.env.GOOGLE_MAPS_API_KEY = 'test-token';
+  const service = new PlacesService() as unknown as {
+    candidatesNearOrigin: (originPlaceId: string) => Promise<{ candidates: Array<{ externalId: string }> }>;
+  };
+
+  const originalFetch = global.fetch;
+  let nearbyAttempts = 0;
+
+  global.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes('/places/') && url.includes('?languageCode=en')) {
+      return new Response(
+        JSON.stringify({
+          id: 'origin',
+          displayName: { text: 'Origin Place' },
+          formattedAddress: 'Singapore',
+          location: { latitude: 1.3103694, longitude: 103.77117 },
+          types: ['establishment'],
+          addressComponents: [{ shortText: 'SG', types: ['country'] }],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    }
+
+    if (url.endsWith('/places:searchNearby')) {
+      nearbyAttempts += 1;
+      const body = JSON.parse(String(init?.body ?? '{}')) as { includedTypes?: unknown };
+
+      if (nearbyAttempts === 1 && Array.isArray(body.includedTypes)) {
+        return new Response(JSON.stringify({ error: { message: 'invalid type' } }), { status: 400 });
+      }
+
+      return new Response(
+        JSON.stringify({
+          places: [
+            {
+              id: 'fallback-nearby',
+              displayName: { text: 'Fallback Nearby Place' },
+              formattedAddress: 'Singapore',
+              location: { latitude: 1.314918, longitude: 103.7643089 },
+              types: ['shopping_mall'],
+              addressComponents: [{ shortText: 'SG', types: ['country'] }],
+            },
+          ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    }
+
+    return new Response(JSON.stringify({ places: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }) as typeof fetch;
+
+  try {
+    const response = await service.candidatesNearOrigin('origin');
+    assert.equal(response.candidates[0]?.externalId, 'fallback-nearby');
+    assert.ok(nearbyAttempts >= 2);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});

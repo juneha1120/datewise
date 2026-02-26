@@ -511,27 +511,13 @@ export class PlacesService {
     }
 
     const origin = await this.details(originPlaceId);
-    const nearbyResponse = await fetchJsonWithRetry<unknown>(`${GOOGLE_API_BASE}/places:searchNearby`, {
-      method: 'POST',
-      headers: this.buildJsonHeaders(
-        'places.id,places.displayName.text,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.priceLevel,places.types,places.addressComponents.shortText,places.addressComponents.types,places.reviews.text.text',
-      ),
-      body: JSON.stringify({
-        includedTypes: INCLUDED_NEARBY_TYPES,
-        maxResultCount: 20,
-        rankPreference: 'POPULARITY',
-        languageCode: 'en',
-        locationRestriction: {
-          circle: {
-            center: {
-              latitude: origin.lat,
-              longitude: origin.lng,
-            },
-            radius: NEARBY_SEARCH_RADIUS_M,
-          },
-        },
-      }),
-    });
+    let nearbyResponse: unknown;
+    try {
+      nearbyResponse = await this.searchNearbyRaw(origin, true);
+    } catch (error) {
+      this.logger.warn(`Nearby search with includedTypes failed, retrying without type filter: ${String(error)}`);
+      nearbyResponse = await this.searchNearbyRaw(origin, false);
+    }
 
     const textSearchResponses = await Promise.allSettled(
       TEXT_SEARCH_QUERIES.map((textQuery) =>
@@ -584,6 +570,47 @@ export class PlacesService {
 
     this.cache.set(cacheKey, normalized, 60_000);
     return normalized;
+  }
+
+
+  private async searchNearbyRaw(origin: PlaceDetailsResponse, useIncludedTypes: boolean): Promise<unknown> {
+    const body: {
+      maxResultCount: number;
+      rankPreference: 'POPULARITY';
+      languageCode: 'en';
+      locationRestriction: {
+        circle: {
+          center: { latitude: number; longitude: number };
+          radius: number;
+        };
+      };
+      includedTypes?: readonly string[];
+    } = {
+      maxResultCount: 20,
+      rankPreference: 'POPULARITY',
+      languageCode: 'en',
+      locationRestriction: {
+        circle: {
+          center: {
+            latitude: origin.lat,
+            longitude: origin.lng,
+          },
+          radius: NEARBY_SEARCH_RADIUS_M,
+        },
+      },
+    };
+
+    if (useIncludedTypes) {
+      body.includedTypes = INCLUDED_NEARBY_TYPES;
+    }
+
+    return await fetchJsonWithRetry<unknown>(`${GOOGLE_API_BASE}/places:searchNearby`, {
+      method: 'POST',
+      headers: this.buildJsonHeaders(
+        'places.id,places.displayName.text,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.priceLevel,places.types,places.addressComponents.shortText,places.addressComponents.types,places.reviews.text.text',
+      ),
+      body: JSON.stringify(body),
+    });
   }
 
   private buildJsonHeaders(fieldMask: string): Record<string, string> {

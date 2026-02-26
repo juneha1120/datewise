@@ -42,6 +42,7 @@ Provider notes
 - `/v1/places/debug/candidates` now returns only candidates within 2km of the resolved origin coordinates.
 - For itinerary generation, backend resolves canonical origin coordinates from `origin.placeId` and uses those coordinates for distance filtering/scoring.
 - Nearby candidate generation uses an explicit `includedTypes` set for date use-cases (food/drinks, activities, scenic, and rain-proof stops).
+- If Google rejects a typed nearby request (e.g., unsupported type), backend retries nearby search without `includedTypes` so itinerary generation still succeeds.
 - Candidate generation is enriched with Google Text Search queries (creative/playful/romantic/outdoor/cozy date intents) and merged with nearby results before dedupe/filtering.
 - Candidates include a booking signal (`BOOK_AHEAD|CHECK_AVAILABILITY|WALK_IN_LIKELY`) scored from category/price/review/keyword heuristics.
 - Candidate tags are deterministic heuristic labels from place types, price level, and snippets (e.g. `ARTSY`, `ROMANTIC`, `LOUD`).
