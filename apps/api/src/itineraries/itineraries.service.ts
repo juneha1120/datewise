@@ -10,9 +10,17 @@ export class ItinerariesService {
     private readonly itineraryBuilder: ItineraryBuilder,
   ) {}
 
-  /** Generates a places-only itinerary from nearby Google candidates. */
+  /** Generates itinerary using canonical origin details resolved from the submitted placeId. */
   async generateItinerary(request: GenerateItineraryRequest): Promise<GenerateItineraryResponse> {
+    const canonicalOrigin = await this.placesService.details(request.origin.placeId);
     const candidateResponse = await this.placesService.candidatesNearOrigin(request.origin.placeId);
-    return this.itineraryBuilder.build(request, candidateResponse.candidates);
+
+    return await this.itineraryBuilder.build(
+      {
+        ...request,
+        origin: canonicalOrigin,
+      },
+      candidateResponse.candidates,
+    );
   }
 }

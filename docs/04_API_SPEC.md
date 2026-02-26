@@ -37,6 +37,11 @@ Provider notes
 - `/v1/places/autocomplete`, `/v1/places/details`, and `/v1/places/debug/candidates` are backed by Google Places API (Autocomplete + Place Details + Nearby Search).
 - Requests are restricted to Singapore (`country=SG`) with Singapore proximity bias.
 - External calls use timeout <= 5s and max 2 retries.
+- Itinerary routing (`legs[]` + `totals.walkingDistanceM`) is computed with Google Directions (backend-only API key) and cached before external calls.
+- Itinerary assembly enforces strict nearby caps during candidate generation: candidates farther than 2km from origin are filtered out, and each next-stop candidate is pre-screened to stay within 2km of the prior stop before scoring; bounded retries still run if routed legs exceed 2km.
+- `/v1/places/debug/candidates` now returns only candidates within 2km of the resolved origin coordinates.
+- For itinerary generation, backend resolves canonical origin coordinates from `origin.placeId` and uses those coordinates for distance filtering/scoring.
+- Nearby candidate generation does not enforce an `includedTypes` whitelist, so Google Nearby can return broader place categories before Datewise scoring/filtering.
 - Candidate tags are deterministic heuristic labels from place types, price level, and snippets (e.g. `ARTSY`, `ROMANTIC`, `LOUD`).
 
 
@@ -85,8 +90,7 @@ Request
   "dateStyle": "FOOD|ACTIVITY|EVENT|SCENIC|SURPRISE",
   "vibe": "CHILL|ACTIVE|ROMANTIC|ADVENTUROUS",
   "food": ["VEG","HALAL_FRIENDLY","NO_ALCOHOL","NO_SEAFOOD"], // optional
-  "avoid": ["OUTDOOR","PHYSICAL","CROWDED","LOUD"], // optional
-  "transport": "MIN_WALK|TRANSIT|DRIVE_OK|WALK_OK" // optional
+  "avoid": ["OUTDOOR","PHYSICAL","CROWDED","LOUD"] // optional
 }
 ```
 

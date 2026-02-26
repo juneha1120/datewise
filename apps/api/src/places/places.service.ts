@@ -263,6 +263,23 @@ export function googleNearbyToCandidates(
     });
 }
 
+
+function haversineDistanceMeters(from: { lat: number; lng: number }, to: { lat: number; lng: number }): number {
+  const earthRadiusMeters = 6_371_000;
+  const toRadians = (value: number): number => (value * Math.PI) / 180;
+
+  const latDistanceRad = toRadians(to.lat - from.lat);
+  const lngDistanceRad = toRadians(to.lng - from.lng);
+  const fromLatRad = toRadians(from.lat);
+  const toLatRad = toRadians(to.lat);
+
+  const a =
+    Math.sin(latDistanceRad / 2) * Math.sin(latDistanceRad / 2) +
+    Math.cos(fromLatRad) * Math.cos(toLatRad) * Math.sin(lngDistanceRad / 2) * Math.sin(lngDistanceRad / 2);
+
+  return Math.round(earthRadiusMeters * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))));
+}
+
 // Country component checks are more reliable than formattedAddress text parsing.
 function isSingaporeAddress(components: Array<{ shortText?: string; types: string[] }>): boolean {
   return components.some(
@@ -346,7 +363,6 @@ export class PlacesService {
         'places.id,places.displayName.text,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.priceLevel,places.types,places.addressComponents.shortText,places.addressComponents.types,places.reviews.text.text',
       ),
       body: JSON.stringify({
-        includedTypes: ['restaurant', 'tourist_attraction', 'cafe', 'museum', 'park', 'shopping_mall'],
         maxResultCount: 20,
         rankPreference: 'POPULARITY',
         languageCode: 'en',
@@ -362,9 +378,13 @@ export class PlacesService {
       }),
     });
 
+    const normalizedCandidates = googleNearbyToCandidates(response, this.taggingService).filter((candidate) => {
+      return haversineDistanceMeters(origin, { lat: candidate.lat, lng: candidate.lng }) <= 2_000;
+    });
+
     const normalized = DebugPlaceCandidatesResponseSchema.parse({
       originPlaceId,
-      candidates: googleNearbyToCandidates(response, this.taggingService),
+      candidates: normalizedCandidates,
     });
 
     this.cache.set(cacheKey, normalized, 60_000);

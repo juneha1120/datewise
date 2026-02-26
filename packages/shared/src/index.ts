@@ -94,7 +94,6 @@ export const GenerateItineraryRequestSchema = z.object({
   vibe: VibeOptionSchema,
   food: z.array(FoodPreferenceSchema).optional(),
   avoid: z.array(AvoidPreferenceSchema).optional(),
-  transport: TransportSchema.optional(),
 });
 
 export const ItineraryStopSchema = z.object({
