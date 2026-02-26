@@ -37,6 +37,13 @@ Provider notes
 - `/v1/places/autocomplete`, `/v1/places/details`, and `/v1/places/debug/candidates` are backed by Google Places API (Autocomplete + Place Details + Nearby Search).
 - Requests are restricted to Singapore (`country=SG`) with Singapore proximity bias.
 - External calls use timeout <= 5s and max 2 retries.
+- Itinerary routing (`legs[]` + `totals.walkingDistanceM`) is computed with Google Directions (backend-only API key) and cached before external calls.
+- Itinerary assembly enforces strict nearby caps during candidate generation: candidates farther than 2km from origin are filtered out, and each next-stop candidate is pre-screened to stay within 2km of the prior stop before scoring; bounded retries still run if routed legs exceed 2km.
+- `/v1/places/debug/candidates` now returns only candidates within 2km of the resolved origin coordinates.
+- For itinerary generation, backend resolves canonical origin coordinates from `origin.placeId` and uses those coordinates for distance filtering/scoring.
+- Nearby candidate generation uses an explicit `includedTypes` set for date use-cases (food/drinks, activities, scenic, and rain-proof stops).
+- Candidate generation is enriched with Google Text Search queries (creative/playful/romantic/outdoor/cozy date intents) and merged with nearby results before dedupe/filtering.
+- Candidates include a booking signal (`BOOK_AHEAD|CHECK_AVAILABILITY|WALK_IN_LIKELY`) scored from category/price/review/keyword heuristics.
 - Candidate tags are deterministic heuristic labels from place types, price level, and snippets (e.g. `ARTSY`, `ROMANTIC`, `LOUD`).
 
 
@@ -60,7 +67,8 @@ Response
       "reviewCount": 1200,
       "priceLevel": 2,
       "types": ["cafe", "restaurant"],
-      "tags": ["COZY", "DATE_NIGHT", "BUDGET_FRIENDLY"]
+      "tags": ["COZY", "DATE_NIGHT", "BUDGET_FRIENDLY"],
+      "booking": { "score": 68, "label": "BOOK_AHEAD" }
     }
   ]
 }
@@ -85,8 +93,7 @@ Request
   "dateStyle": "FOOD|ACTIVITY|EVENT|SCENIC|SURPRISE",
   "vibe": "CHILL|ACTIVE|ROMANTIC|ADVENTUROUS",
   "food": ["VEG","HALAL_FRIENDLY","NO_ALCOHOL","NO_SEAFOOD"], // optional
-  "avoid": ["OUTDOOR","PHYSICAL","CROWDED","LOUD"], // optional
-  "transport": "MIN_WALK|TRANSIT|DRIVE_OK|WALK_OK" // optional
+  "avoid": ["OUTDOOR","PHYSICAL","CROWDED","LOUD"] // optional
 }
 ```
 

@@ -17,6 +17,76 @@ import { TaggingService } from './tagging.service';
 const SINGAPORE_COUNTRY_CODE = 'SG';
 const GOOGLE_API_BASE = 'https://places.googleapis.com/v1';
 
+const MAX_ORIGIN_DISTANCE_M = 2_000;
+const NEARBY_SEARCH_RADIUS_M = 7_000;
+const TEXT_SEARCH_MAX_RESULTS = 3;
+
+const INCLUDED_NEARBY_TYPES = [
+  'restaurant',
+  'cafe',
+  'bar',
+  'bakery',
+  'meal_takeaway',
+  'art_gallery',
+  'museum',
+  'movie_theater',
+  'spa',
+  'bowling_alley',
+  'amusement_park',
+  'tourist_attraction',
+  'park',
+  'natural_feature',
+  'shopping_mall',
+  'book_store',
+  'clothing_store',
+  'store',
+] as const;
+
+const TEXT_SEARCH_QUERIES = [
+  'pottery workshop Singapore',
+  'art workshop Singapore',
+  'painting class Singapore',
+  'cooking class Singapore',
+  'perfume workshop Singapore',
+  'leather workshop Singapore',
+  'escape room Singapore',
+  'board game cafe Singapore',
+  'arcade Singapore',
+  'trampoline park Singapore',
+  'indoor playground adults Singapore',
+  'mini golf Singapore',
+  'rooftop bar Singapore',
+  'fine dining restaurant Singapore',
+  'romantic restaurant Singapore',
+  'skyline view Singapore',
+  'river walk Singapore',
+  'cycling park Singapore',
+  'hiking trail Singapore',
+  'nature trail Singapore',
+  'water sports Singapore',
+  'kayaking Singapore',
+  'aesthetic cafe Singapore',
+  'dessert cafe Singapore',
+  'wine bar Singapore',
+  'hidden cafe Singapore',
+  'speakeasy Singapore',
+] as const;
+
+const BOOKING_KEYWORDS = [
+  'reservation',
+  'reserve',
+  'booking',
+  'fully booked',
+  'queue',
+  'appointment',
+  'ticket',
+  'slot',
+  'waitlist',
+  'advance',
+  'prebook',
+] as const;
+
+
 const GoogleAutocompleteResponseSchema = z.object({
   suggestions: z.array(
     z.object({
@@ -239,12 +309,20 @@ export function googleNearbyToCandidates(
     .map((place) => {
       const types = place.types.filter((type) => type.length > 0);
       const priceLevel = place.priceLevel ? priceLevelMap[place.priceLevel] : undefined;
+      const snippets = place.reviews
+        .map((review) => review.text?.text ?? '')
+        .filter((snippet) => snippet.length > 0);
       const tags = taggingService.inferTags({
         types,
         priceLevel,
-        snippets: place.reviews
-          .map((review) => review.text?.text ?? '')
-          .filter((snippet) => snippet.length > 0),
+        snippets,
+      });
+      const booking = inferBookingSignal({
+        types,
+        priceLevel,
+        rating: place.rating,
+        reviewCount: place.userRatingCount,
+        snippets,
       });
 
       return CandidateSchema.parse({
@@ -259,8 +337,100 @@ export function googleNearbyToCandidates(
         priceLevel,
         types,
         tags,
+        booking,
       });
     });
+}
+
+
+
+function inferBookingSignal(input: {
+  types: readonly string[];
+  priceLevel: number | undefined;
+  rating: number | undefined;
+  reviewCount: number | undefined;
+  snippets: readonly string[];
+}): { score: number; label: 'BOOK_AHEAD' | 'CHECK_AVAILABILITY' | 'WALK_IN_LIKELY' } {
+  const signals = new Set(input.types.map((type) => type.toLowerCase()));
+  let score = 0;
+
+  if (
+    signals.has('spa') ||
+    signals.has('escape_room') ||
+    signals.has('amusement_park') ||
+    signals.has('bowling_alley') ||
+    signals.has('art_gallery') ||
+    signals.has('movie_theater') ||
+    signals.has('museum')
+  ) {
+    score += 60;
+  } else if (signals.has('tourist_attraction') || signals.has('museum')) {
+    score += 40;
+  } else if (signals.has('bar')) {
+    score += 25;
+  } else if (signals.has('restaurant')) {
+    score += 20;
+  }
+
+  if (input.priceLevel === 3) {
+    score += 15;
+  } else if (input.priceLevel === 4) {
+    score += 25;
+  }
+
+  const reviews = input.reviewCount ?? 0;
+  if (reviews >= 2_000) {
+    score += 25;
+  } else if (reviews >= 500) {
+    score += 15;
+  }
+
+  if ((input.rating ?? 0) >= 4.5 && reviews >= 200) {
+    score += 15;
+  }
+
+  const keywordHits = input.snippets
+    .join(' ')
+    .toLowerCase()
+    .split(/\W+/u)
+    .filter((word) => BOOKING_KEYWORDS.includes(word as (typeof BOOKING_KEYWORDS)[number])).length;
+
+  score += Math.min(30, keywordHits * 5);
+
+  const label = score >= 60 ? 'BOOK_AHEAD' : score >= 40 ? 'CHECK_AVAILABILITY' : 'WALK_IN_LIKELY';
+
+  return {
+    score,
+    label,
+  };
+}
+
+function mergeUniqueCandidates(candidates: readonly Candidate[]): Candidate[] {
+  const byExternalId = new Map<string, Candidate>();
+  for (const candidate of candidates) {
+    if (!byExternalId.has(candidate.externalId)) {
+      byExternalId.set(candidate.externalId, candidate);
+    }
+  }
+
+  return [...byExternalId.values()];
+}
+
+
+function haversineDistanceMeters(from: { lat: number; lng: number }, to: { lat: number; lng: number }): number {
+  const earthRadiusMeters = 6_371_000;
+  const toRadians = (value: number): number => (value * Math.PI) / 180;
+
+  const latDistanceRad = toRadians(to.lat - from.lat);
+  const lngDistanceRad = toRadians(to.lng - from.lng);
+  const fromLatRad = toRadians(from.lat);
+  const toLatRad = toRadians(to.lat);
+
+  const a =
+    Math.sin(latDistanceRad / 2) * Math.sin(latDistanceRad / 2) +
+    Math.cos(fromLatRad) * Math.cos(toLatRad) * Math.sin(lngDistanceRad / 2) * Math.sin(lngDistanceRad / 2);
+
+  return Math.round(earthRadiusMeters * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))));
 }
 
 // Country component checks are more reliable than formattedAddress text parsing.
@@ -340,13 +510,13 @@ export class PlacesService {
     }
 
     const origin = await this.details(originPlaceId);
-    const response = await fetchJsonWithRetry<unknown>(`${GOOGLE_API_BASE}/places:searchNearby`, {
+    const nearbyResponse = await fetchJsonWithRetry<unknown>(`${GOOGLE_API_BASE}/places:searchNearby`, {
       method: 'POST',
       headers: this.buildJsonHeaders(
         'places.id,places.displayName.text,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.priceLevel,places.types,places.addressComponents.shortText,places.addressComponents.types,places.reviews.text.text',
       ),
       body: JSON.stringify({
-        includedTypes: ['restaurant', 'tourist_attraction', 'cafe', 'museum', 'park', 'shopping_mall'],
+        includedTypes: INCLUDED_NEARBY_TYPES,
         maxResultCount: 20,
         rankPreference: 'POPULARITY',
         languageCode: 'en',
@@ -356,15 +526,48 @@ export class PlacesService {
               latitude: origin.lat,
               longitude: origin.lng,
             },
-            radius: 7_000,
+            radius: NEARBY_SEARCH_RADIUS_M,
           },
         },
       }),
     });
 
+    const textSearchResponses = await Promise.all(
+      TEXT_SEARCH_QUERIES.map((textQuery) =>
+        fetchJsonWithRetry<unknown>(`${GOOGLE_API_BASE}/places:searchText`, {
+          method: 'POST',
+          headers: this.buildJsonHeaders(
+            'places.id,places.displayName.text,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.priceLevel,places.types,places.addressComponents.shortText,places.addressComponents.types,places.reviews.text.text',
+          ),
+          body: JSON.stringify({
+            textQuery,
+            maxResultCount: TEXT_SEARCH_MAX_RESULTS,
+            languageCode: 'en',
+            regionCode: 'SG',
+            locationBias: {
+              circle: {
+                center: {
+                  latitude: origin.lat,
+                  longitude: origin.lng,
+                },
+                radius: NEARBY_SEARCH_RADIUS_M,
+              },
+            },
+          }),
+        }),
+      ),
+    );
+
+    const nearbyCandidates = googleNearbyToCandidates(nearbyResponse, this.taggingService);
+    const textSearchCandidates = textSearchResponses.flatMap((payload) => googleNearbyToCandidates(payload, this.taggingService));
+
+    const normalizedCandidates = mergeUniqueCandidates([...nearbyCandidates, ...textSearchCandidates]).filter((candidate) => {
+      return haversineDistanceMeters(origin, { lat: candidate.lat, lng: candidate.lng }) <= MAX_ORIGIN_DISTANCE_M;
+    });
+
     const normalized = DebugPlaceCandidatesResponseSchema.parse({
       originPlaceId,
-      candidates: googleNearbyToCandidates(response, this.taggingService),
+      candidates: normalizedCandidates,
     });
 
     this.cache.set(cacheKey, normalized, 60_000);

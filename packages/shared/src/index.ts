@@ -61,6 +61,13 @@ export const TagSchema = z.enum([
 
 export const GenerateItineraryOriginSchema = PlaceDetailsResponseSchema;
 
+
+export const BookingLikelihoodSchema = z.enum(['BOOK_AHEAD', 'CHECK_AVAILABILITY', 'WALK_IN_LIKELY']);
+export const BookingSignalSchema = z.object({
+  score: z.number().int().min(0),
+  label: BookingLikelihoodSchema,
+});
+
 export const CandidateSchema = z.object({
   kind: z.enum(['PLACE', 'EVENT']),
   externalId: z.string().min(1),
@@ -73,6 +80,7 @@ export const CandidateSchema = z.object({
   priceLevel: z.number().int().min(0).max(4).optional(),
   types: z.array(z.string().min(1)).optional(),
   tags: z.array(TagSchema).optional(),
+  booking: BookingSignalSchema.optional(),
 });
 
 export const DebugPlaceCandidatesQuerySchema = z.object({
@@ -94,7 +102,6 @@ export const GenerateItineraryRequestSchema = z.object({
   vibe: VibeOptionSchema,
   food: z.array(FoodPreferenceSchema).optional(),
   avoid: z.array(AvoidPreferenceSchema).optional(),
-  transport: TransportSchema.optional(),
 });
 
 export const ItineraryStopSchema = z.object({
@@ -152,6 +159,8 @@ export type Tag = z.infer<typeof TagSchema>;
 export type GenerateItineraryOrigin = z.infer<typeof GenerateItineraryOriginSchema>;
 export type GenerateItineraryRequest = z.infer<typeof GenerateItineraryRequestSchema>;
 export type Candidate = z.infer<typeof CandidateSchema>;
+export type BookingLikelihood = z.infer<typeof BookingLikelihoodSchema>;
+export type BookingSignal = z.infer<typeof BookingSignalSchema>;
 export type DebugPlaceCandidatesQuery = z.infer<typeof DebugPlaceCandidatesQuerySchema>;
 export type DebugPlaceCandidatesResponse = z.infer<typeof DebugPlaceCandidatesResponseSchema>;
 export type ItineraryStop = z.infer<typeof ItineraryStopSchema>;

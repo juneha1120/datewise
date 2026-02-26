@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { AvoidPreference, Budget, Candidate, DateStyleOption, Transport, VibeOption } from '@datewise/shared';
+import { AvoidPreference, Budget, Candidate, DateStyleOption, VibeOption } from '@datewise/shared';
 
 export type ScoringBreakdown = {
   qualityScore: number;
@@ -25,7 +25,6 @@ export type ScoreCandidatesInput = {
   dateStyle: DateStyleOption;
   vibe: VibeOption;
   avoid?: readonly AvoidPreference[];
-  transport?: Transport;
   selected?: readonly Candidate[];
   candidates: readonly Candidate[];
 };
@@ -45,12 +44,7 @@ const SCORING_WEIGHTS = {
   diversityPenalty: 0.05,
 } as const;
 
-const TRANSPORT_DISTANCE_CAP_M: Readonly<Record<Transport, number>> = {
-  MIN_WALK: 800,
-  TRANSIT: 2000,
-  DRIVE_OK: 6000,
-  WALK_OK: 4000,
-};
+const DISTANCE_FIT_CAP_M = 2_000;
 
 const BUDGET_TARGET_LEVEL: Readonly<Record<Budget, number>> = {
   $: 1,
@@ -147,7 +141,7 @@ export class ScoringService {
         });
 
         const qualityScore = this.computeQualityScore(candidate);
-        const fitScore = this.computeFitScore(candidate, input.budget, input.transport, distanceM);
+        const fitScore = this.computeFitScore(candidate, input.budget, distanceM);
         const styleVibeScore = this.computeStyleVibeScore(candidate, input.dateStyle, input.vibe);
         const avoidPenalty = this.computeAvoidPenalty(candidate, input.avoid);
         const diversityPenalty = this.computeDiversityPenalty(candidate, seenTypeCounts, seenTagCounts);
@@ -195,9 +189,8 @@ export class ScoringService {
     return clamp01(0.7 * ratingScore + 0.3 * confidenceScore);
   }
 
-  private computeFitScore(candidate: Candidate, budget: Budget, transport: Transport | undefined, distanceM: number): number {
-    const distanceCapM = TRANSPORT_DISTANCE_CAP_M[transport ?? 'TRANSIT'];
-    const distanceScore = clamp01(1 - distanceM / distanceCapM);
+  private computeFitScore(candidate: Candidate, budget: Budget, distanceM: number): number {
+    const distanceScore = clamp01(1 - distanceM / DISTANCE_FIT_CAP_M);
 
     const targetPriceLevel = BUDGET_TARGET_LEVEL[budget];
     const budgetScore =

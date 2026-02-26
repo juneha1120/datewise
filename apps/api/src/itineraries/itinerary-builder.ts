@@ -5,12 +5,14 @@ import {
   GenerateItineraryResponse,
   GenerateItineraryResponseSchema,
   ItineraryLeg,
-  Transport,
 } from '@datewise/shared';
 import { Injectable } from '@nestjs/common';
+import { DirectionsService } from './directions.service';
 import { ScoredCandidate, ScoringService } from './scoring.service';
 
 const MAX_CANDIDATE_POOL = 16;
+const MAX_ROUTE_VALIDATION_ATTEMPTS = 4;
+const MAX_NEARBY_DISTANCE_M = 2_000;
 
 const STYLE_ANCHOR_SIGNALS: Readonly<Record<DateStyleOption, readonly string[]>> = {
   FOOD: ['restaurant', 'cafe', 'meal_takeaway', 'bakery', 'cozy', 'date_night'],
@@ -20,35 +22,12 @@ const STYLE_ANCHOR_SIGNALS: Readonly<Record<DateStyleOption, readonly string[]>>
   SURPRISE: ['iconic', 'artsy', 'romantic', 'nature', 'cozy'],
 };
 
-const MODE_BY_TRANSPORT: Readonly<Record<Transport, ItineraryLeg['mode']>> = {
-  MIN_WALK: 'WALK',
-  WALK_OK: 'WALK',
-  TRANSIT: 'TRANSIT',
-  DRIVE_OK: 'DRIVE',
-};
-
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
 function normalize(values: readonly string[] | undefined): Set<string> {
   return new Set((values ?? []).map((value) => value.trim().toLowerCase()));
-}
-
-function haversineDistanceMeters(from: { lat: number; lng: number }, to: { lat: number; lng: number }): number {
-  const earthRadiusMeters = 6_371_000;
-  const toRadians = (value: number): number => (value * Math.PI) / 180;
-
-  const latDistanceRad = toRadians(to.lat - from.lat);
-  const lngDistanceRad = toRadians(to.lng - from.lng);
-  const fromLatRad = toRadians(from.lat);
-  const toLatRad = toRadians(to.lat);
-
-  const a =
-    Math.sin(latDistanceRad / 2) * Math.sin(latDistanceRad / 2) +
-    Math.cos(fromLatRad) * Math.cos(toLatRad) * Math.sin(lngDistanceRad / 2) * Math.sin(lngDistanceRad / 2);
-
-  return Math.round(earthRadiusMeters * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))));
 }
 
 /** Returns deterministic target stop count bounded by trip duration and available candidates. */
@@ -89,6 +68,43 @@ export function pickAnchorCandidate(dateStyle: DateStyleOption, ranked: readonly
     })[0]?.item;
 }
 
+/** Validates that every routed leg stays inside the nearby radius. */
+export function hasOnlyNearbyLegs(legs: readonly ItineraryLeg[]): boolean {
+  return legs.every((leg) => leg.distanceM <= MAX_NEARBY_DISTANCE_M);
+}
+
+/** Ensures we have enough nearby candidates around the selected start point. */
+export function filterCandidatesWithinOriginRadius(
+  ranked: readonly ScoredCandidate[],
+  maxDistanceM: number = MAX_NEARBY_DISTANCE_M,
+): ScoredCandidate[] {
+  return ranked.filter((item) => item.distanceM <= maxDistanceM);
+}
+
+function isRouteValidForStopCount(legs: readonly ItineraryLeg[], selectedCount: number, stopCount: number): boolean {
+  return selectedCount >= stopCount && hasOnlyNearbyLegs(legs);
+}
+
+function haversineDistanceMeters(from: { lat: number; lng: number }, to: { lat: number; lng: number }): number {
+  const earthRadiusMeters = 6_371_000;
+  const toRadians = (value: number): number => (value * Math.PI) / 180;
+
+  const latDistanceRad = toRadians(to.lat - from.lat);
+  const lngDistanceRad = toRadians(to.lng - from.lng);
+  const fromLatRad = toRadians(from.lat);
+  const toLatRad = toRadians(to.lat);
+
+  const a =
+    Math.sin(latDistanceRad / 2) * Math.sin(latDistanceRad / 2) +
+    Math.cos(fromLatRad) * Math.cos(toLatRad) * Math.sin(lngDistanceRad / 2) * Math.sin(lngDistanceRad / 2);
+
+  return Math.round(earthRadiusMeters * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))));
+}
+
+function isWithinNearbyRadius(from: { lat: number; lng: number }, to: { lat: number; lng: number }): boolean {
+  return haversineDistanceMeters(from, to) <= MAX_NEARBY_DISTANCE_M;
+}
+
 function buildReason(item: ScoredCandidate, request: GenerateItineraryRequest, stopIndex: number): string {
   const snippets: string[] = [];
 
@@ -116,26 +132,44 @@ function buildReason(item: ScoredCandidate, request: GenerateItineraryRequest, s
   return snippets.length > 0 ? snippets.slice(0, 2).join('; ') : 'Balanced pick from nearby ranked places.';
 }
 
+function removeRejectedCandidate(
+  selected: readonly Candidate[],
+  rankedPool: readonly ScoredCandidate[],
+  rejectedExternalIds: Set<string>,
+): void {
+  for (let index = selected.length - 1; index > 0; index -= 1) {
+    const candidateId = selected[index]?.externalId;
+    if (!candidateId) {
+      continue;
+    }
+
+    const hasBackupCandidate = rankedPool.some(
+      (item) => item.candidate.externalId !== candidateId && !rejectedExternalIds.has(item.candidate.externalId),
+    );
+
+    if (hasBackupCandidate) {
+      rejectedExternalIds.add(candidateId);
+      return;
+    }
+  }
+}
+
 @Injectable()
 export class ItineraryBuilder {
-  constructor(private readonly scoringService: ScoringService) {}
+  constructor(
+    private readonly scoringService: ScoringService,
+    private readonly directionsService: DirectionsService,
+  ) {}
 
-  /** Builds a places-only itinerary from candidates using deterministic scoring and anchor-first assembly. */
-  build(request: GenerateItineraryRequest, candidates: readonly Candidate[]): GenerateItineraryResponse {
-    const initialRanked = this.scoringService.scoreCandidates({
-      origin: request.origin,
-      budget: request.budget,
-      dateStyle: request.dateStyle,
-      vibe: request.vibe,
-      avoid: request.avoid,
-      transport: request.transport,
-      candidates,
-    });
+  private pickStops(
+    request: GenerateItineraryRequest,
+    candidatePool: readonly ScoredCandidate[],
+    stopCount: number,
+    rejectedExternalIds: ReadonlySet<string>,
+  ): Candidate[] {
+    const filteredPool = candidatePool.filter((item) => !rejectedExternalIds.has(item.candidate.externalId));
 
-    const candidatePool = initialRanked.slice(0, MAX_CANDIDATE_POOL);
-    const stopCount = determineStopCount(request.durationMin, candidatePool.length);
-
-    const anchor = pickAnchorCandidate(request.dateStyle, candidatePool);
+    const anchor = pickAnchorCandidate(request.dateStyle, filteredPool);
     const selected: Candidate[] = [];
 
     if (anchor) {
@@ -143,9 +177,20 @@ export class ItineraryBuilder {
     }
 
     while (selected.length < stopCount) {
-      const remaining = candidatePool
+      const lastSelected = selected[selected.length - 1];
+      const remaining = filteredPool
         .map((item) => item.candidate)
-        .filter((candidate) => !selected.some((picked) => picked.externalId === candidate.externalId));
+        .filter((candidate) => !selected.some((picked) => picked.externalId === candidate.externalId))
+        .filter((candidate) => {
+          if (!lastSelected) {
+            return true;
+          }
+
+          return isWithinNearbyRadius(
+            { lat: lastSelected.lat, lng: lastSelected.lng },
+            { lat: candidate.lat, lng: candidate.lng },
+          );
+        });
 
       if (remaining.length === 0) {
         break;
@@ -157,7 +202,6 @@ export class ItineraryBuilder {
         dateStyle: request.dateStyle,
         vibe: request.vibe,
         avoid: request.avoid,
-        transport: request.transport,
         selected,
         candidates: remaining,
       })[0];
@@ -169,13 +213,69 @@ export class ItineraryBuilder {
       selected.push(next.candidate);
     }
 
+    return selected;
+  }
+
+  /** Builds an itinerary with routed legs and per-stop proximity validation. */
+  async build(request: GenerateItineraryRequest, candidates: readonly Candidate[]): Promise<GenerateItineraryResponse> {
+    const initialRanked = this.scoringService.scoreCandidates({
+      origin: request.origin,
+      budget: request.budget,
+      dateStyle: request.dateStyle,
+      vibe: request.vibe,
+      avoid: request.avoid,
+      candidates,
+    });
+
+    const nearbyRanked = filterCandidatesWithinOriginRadius(initialRanked);
+    const candidatePool = nearbyRanked.slice(0, MAX_CANDIDATE_POOL);
+    const stopCount = determineStopCount(request.durationMin, candidatePool.length);
+    const warnings: string[] = [];
+    const rejectedExternalIds = new Set<string>();
+
+    if (nearbyRanked.length < initialRanked.length) {
+      warnings.push('Filtered out far candidates to enforce a strict 2km cap from your selected starting point.');
+    }
+
+    let selected: Candidate[] = [];
+    let legs: ItineraryLeg[] = [];
+    let walkingDistanceM = 0;
+
+    for (let attempt = 0; attempt < MAX_ROUTE_VALIDATION_ATTEMPTS; attempt += 1) {
+      selected = this.pickStops(request, candidatePool, stopCount, rejectedExternalIds);
+
+      legs = [];
+      walkingDistanceM = 0;
+      for (let index = 0; index < selected.length - 1; index += 1) {
+        const leg = await this.directionsService.routeLeg(selected[index], selected[index + 1]);
+        walkingDistanceM += leg.walkingDistanceM;
+
+        legs.push({
+          from: index,
+          to: index + 1,
+          mode: leg.mode,
+          durationMin: leg.durationMin,
+          distanceM: leg.distanceM,
+        });
+      }
+
+      if (isRouteValidForStopCount(legs, selected.length, stopCount)) {
+        break;
+      }
+
+      removeRejectedCandidate(selected, candidatePool, rejectedExternalIds);
+    }
+
+    if (!isRouteValidForStopCount(legs, selected.length, stopCount)) {
+      warnings.push('Unable to keep every stop-to-stop route within 2km using available nearby candidates.');
+    }
+
     const finalRanked = this.scoringService.scoreCandidates({
       origin: request.origin,
       budget: request.budget,
       dateStyle: request.dateStyle,
       vibe: request.vibe,
       avoid: request.avoid,
-      transport: request.transport,
       selected: [],
       candidates: selected,
     });
@@ -200,27 +300,6 @@ export class ItineraryBuilder {
       reason: buildReason(item, request, index),
     }));
 
-    const legMode = MODE_BY_TRANSPORT[request.transport ?? 'TRANSIT'];
-    const legs = stops.slice(0, -1).map((stop, index) => {
-      const next = stops[index + 1];
-      const distanceM = haversineDistanceMeters(
-        { lat: stop.lat, lng: stop.lng },
-        { lat: next.lat, lng: next.lng },
-      );
-
-      const speedMetersPerMin = legMode === 'WALK' ? 80 : legMode === 'DRIVE' ? 500 : 300;
-      const durationMin = Math.max(1, Math.round(distanceM / speedMetersPerMin));
-
-      return {
-        from: index,
-        to: index + 1,
-        mode: legMode,
-        durationMin,
-        distanceM: Math.max(1, distanceM),
-      } satisfies ItineraryLeg;
-    });
-
-    const warnings: string[] = [];
     if (stops.length < stopCount) {
       warnings.push('Not enough ranked candidates to fill the target stop count.');
     }
@@ -231,7 +310,7 @@ export class ItineraryBuilder {
       legs,
       totals: {
         durationMin: request.durationMin,
-        walkingDistanceM: legs.filter((leg) => leg.mode === 'WALK').reduce((sum, leg) => sum + leg.distanceM, 0),
+        walkingDistanceM,
       },
       meta: {
         usedCache: false,

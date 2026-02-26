@@ -13,12 +13,10 @@ import {
   PlaceDetailsResponseSchema,
   PlacesAutocompleteResponse,
   PlacesAutocompleteResponseSchema,
-  Transport,
   VibeOption,
 } from '@datewise/shared';
 
 const budgetOptions: Budget[] = ['$', '$$', '$$$'];
-const transportOptions: Transport[] = ['MIN_WALK', 'TRANSIT', 'DRIVE_OK', 'WALK_OK'];
 const dateStyleOptions: DateStyleOption[] = ['FOOD', 'ACTIVITY', 'EVENT', 'SCENIC', 'SURPRISE'];
 const vibeOptions: VibeOption[] = ['CHILL', 'ACTIVE', 'ROMANTIC', 'ADVENTUROUS'];
 const foodOptions: FoodPreference[] = ['VEG', 'HALAL_FRIENDLY', 'NO_ALCOHOL', 'NO_SEAFOOD'];
@@ -302,7 +300,6 @@ export default function HomePage() {
   const [startTime, setStartTime] = useState('18:00');
   const [durationMin, setDurationMin] = useState('180');
   const [budget, setBudget] = useState<Budget>('$$');
-  const [transport, setTransport] = useState<Transport | ''>('');
   const [dateStyle, setDateStyle] = useState<DateStyleOption>('SCENIC');
   const [vibe, setVibe] = useState<VibeOption>('ROMANTIC');
   const [food, setFood] = useState<FoodPreference[]>([]);
@@ -398,7 +395,6 @@ export default function HomePage() {
       vibe,
       food,
       avoid,
-      transport: transport || undefined,
     };
 
     try {
@@ -479,14 +475,6 @@ export default function HomePage() {
           </select>
           <br />
 
-          <label htmlFor="transport">Transport (optional)</label>
-          <select id="transport" value={transport} onChange={(event) => setTransport(event.target.value as Transport | '')}>
-            <option value="">No preference</option>
-            {transportOptions.map((option) => (
-              <option key={option} value={option}>{option}</option>
-            ))}
-          </select>
-          <br />
 
           <label htmlFor="date-style">Date style</label>
           <select id="date-style" value={dateStyle} onChange={(event) => setDateStyle(event.target.value as DateStyleOption)}>
