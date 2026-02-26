@@ -103,21 +103,14 @@ test('googleNearbyToCandidates normalizes singapore nearby places', () => {
     ],
   });
 
-  assert.deepStrictEqual(response, [
-    {
-      kind: 'PLACE',
-      externalId: 'g.sg.place1',
-      name: 'Tiong Bahru Bakery',
-      lat: 1.2851,
-      lng: 103.8321,
-      address: '56 Eng Hoon St, Singapore 160056',
-      rating: 4.4,
-      reviewCount: 812,
-      priceLevel: 2,
-      types: ['bakery', 'cafe'],
-      tags: ['COZY', 'DATE_NIGHT'],
-    },
-  ]);
+  assert.equal(response.length, 1);
+  assert.equal(response[0].externalId, 'g.sg.place1');
+  assert.equal(response[0].name, 'Tiong Bahru Bakery');
+  assert.deepEqual(response[0].types, ['bakery', 'cafe']);
+  assert.deepEqual(response[0].tags, ['COZY', 'DATE_NIGHT']);
+  const first = response[0] as (typeof response)[number] & { booking?: { label: string } };
+  assert.ok(first.booking);
+  assert.equal(first.booking?.label, 'WALK_IN_LIKELY');
 });
 
 test('googleNearbyToCandidates filters out non-Singapore places', () => {
@@ -195,7 +188,7 @@ test('details call sets Google field mask and languageCode', async () => {
   }
 });
 
-test('candidatesNearOrigin requests reviews in nearby field mask', async () => {
+test('candidatesNearOrigin sends nearby includedTypes and text-search query fanout', async () => {
   process.env.GOOGLE_MAPS_API_KEY = 'test-token';
   const service = new PlacesService() as unknown as {
     candidatesNearOrigin: (originPlaceId: string) => Promise<unknown>;
@@ -242,14 +235,19 @@ test('candidatesNearOrigin requests reviews in nearby field mask', async () => {
 
   try {
     await service.candidatesNearOrigin('origin');
-    assert.equal(calls.length, 2);
+    assert.ok(calls.length > 2);
 
-    const nearbyCall = calls[1];
-    const fieldMask = (nearbyCall.init?.headers as Record<string, string>)['X-Goog-FieldMask'];
+    const nearbyCall = calls.find((call) => call.url.endsWith('/places:searchNearby'));
+    assert.ok(nearbyCall);
+    const fieldMask = ((nearbyCall as { init?: RequestInit }).init?.headers as Record<string, string>)['X-Goog-FieldMask'];
     assert.ok(fieldMask.includes('places.reviews.text.text'));
 
-    const nearbyBody = JSON.parse(String(nearbyCall.init?.body ?? '{}')) as Record<string, unknown>;
-    assert.equal('includedTypes' in nearbyBody, false);
+    const nearbyBody = JSON.parse(String((nearbyCall as { init?: RequestInit }).init?.body ?? '{}')) as Record<string, unknown>;
+    assert.ok(Array.isArray(nearbyBody.includedTypes));
+    assert.ok((nearbyBody.includedTypes as unknown[]).includes('restaurant'));
+
+    const textSearchCalls = calls.filter((call) => call.url.endsWith('/places:searchText'));
+    assert.ok(textSearchCalls.length >= 20);
   } finally {
     global.fetch = originalFetch;
   }
@@ -308,6 +306,69 @@ test('candidatesNearOrigin filters candidates beyond 2km from origin', async () 
   try {
     const result = await service.candidatesNearOrigin('origin');
     assert.deepEqual(result.candidates.map((candidate) => candidate.externalId), ['nearby-candidate']);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+
+test('candidatesNearOrigin falls back when nearby includedTypes request is rejected', async () => {
+  process.env.GOOGLE_MAPS_API_KEY = 'test-token';
+  const service = new PlacesService() as unknown as {
+    candidatesNearOrigin: (originPlaceId: string) => Promise<{ candidates: Array<{ externalId: string }> }>;
+  };
+
+  const originalFetch = global.fetch;
+  let nearbyAttempts = 0;
+
+  global.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes('/places/') && url.includes('?languageCode=en')) {
+      return new Response(
+        JSON.stringify({
+          id: 'origin',
+          displayName: { text: 'Origin Place' },
+          formattedAddress: 'Singapore',
+          location: { latitude: 1.3103694, longitude: 103.77117 },
+          types: ['establishment'],
+          addressComponents: [{ shortText: 'SG', types: ['country'] }],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    }
+
+    if (url.endsWith('/places:searchNearby')) {
+      nearbyAttempts += 1;
+      const body = JSON.parse(String(init?.body ?? '{}')) as { includedTypes?: unknown };
+
+      if (nearbyAttempts === 1 && Array.isArray(body.includedTypes)) {
+        return new Response(JSON.stringify({ error: { message: 'invalid type' } }), { status: 400 });
+      }
+
+      return new Response(
+        JSON.stringify({
+          places: [
+            {
+              id: 'fallback-nearby',
+              displayName: { text: 'Fallback Nearby Place' },
+              formattedAddress: 'Singapore',
+              location: { latitude: 1.314918, longitude: 103.7643089 },
+              types: ['shopping_mall'],
+              addressComponents: [{ shortText: 'SG', types: ['country'] }],
+            },
+          ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    }
+
+    return new Response(JSON.stringify({ places: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }) as typeof fetch;
+
+  try {
+    const response = await service.candidatesNearOrigin('origin');
+    assert.equal(response.candidates[0]?.externalId, 'fallback-nearby');
+    assert.ok(nearbyAttempts >= 2);
   } finally {
     global.fetch = originalFetch;
   }

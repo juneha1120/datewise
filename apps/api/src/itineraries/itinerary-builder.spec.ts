@@ -177,8 +177,8 @@ test('itinerary builder pre-filters next-stop candidates by 2km leg radius', asy
     candidate('anchor-east', {
       types: ['restaurant'],
       tags: ['COZY', 'DATE_NIGHT'],
-      lat: 1.294,
-      lng: 103.846,
+      lat: 1.3,
+      lng: 103.84,
     }),
     candidate('near-east', {
       lat: 1.301,
