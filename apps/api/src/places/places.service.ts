@@ -563,6 +563,10 @@ export class PlacesService {
       return haversineDistanceMeters(origin, { lat: candidate.lat, lng: candidate.lng }) <= MAX_ORIGIN_DISTANCE_M;
     });
 
+    const normalizedCandidates = googleNearbyToCandidates(response, this.taggingService).filter((candidate) => {
+      return haversineDistanceMeters(origin, { lat: candidate.lat, lng: candidate.lng }) <= 2_000;
+    });
+
     const normalized = DebugPlaceCandidatesResponseSchema.parse({
       originPlaceId,
       candidates: normalizedCandidates,
