@@ -18,7 +18,6 @@ function validBody() {
     startTime: '18:30',
     durationMin: 180,
     budget: '$$',
-    dateStyle: 'FOOD',
     vibe: 'ROMANTIC',
   };
 }

@@ -1,7 +1,14 @@
 import { test } from 'node:test';
 import * as assert from 'node:assert/strict';
 import { Candidate, GenerateItineraryRequest } from '@datewise/shared';
-import { determineStopCount, ItineraryBuilder, pickAnchorCandidate } from './itinerary-builder';
+import { DirectionsService } from './directions.service';
+import {
+  determineStopCount,
+  filterCandidatesWithinOriginRadius,
+  hasOnlyNearbyLegs,
+  ItineraryBuilder,
+  pickAnchorCandidate,
+} from './itinerary-builder';
 import { ScoredCandidate, ScoringService } from './scoring.service';
 
 function buildRequest(overrides: Partial<GenerateItineraryRequest> = {}): GenerateItineraryRequest {
@@ -18,7 +25,6 @@ function buildRequest(overrides: Partial<GenerateItineraryRequest> = {}): Genera
     startTime: '18:30',
     durationMin: 180,
     budget: '$$',
-    dateStyle: 'FOOD',
     vibe: 'ROMANTIC',
     ...overrides,
   };
@@ -41,6 +47,17 @@ function candidate(externalId: string, overrides: Partial<Candidate> = {}): Cand
   };
 }
 
+function buildDirectionsService(totalWalkingDistanceM: number): DirectionsService {
+  return {
+    routeLeg: async (_from: { lat: number; lng: number }, _to: { lat: number; lng: number }) => ({
+      mode: 'TRANSIT',
+      durationMin: 10,
+      distanceM: 1_000,
+      walkingDistanceM: totalWalkingDistanceM,
+    }),
+  } as unknown as DirectionsService;
+}
+
 test('determineStopCount maps 2h/3h/4h windows to 2/3/4 stops', () => {
   assert.equal(determineStopCount(120, 8), 2);
   assert.equal(determineStopCount(180, 8), 3);
@@ -48,71 +65,65 @@ test('determineStopCount maps 2h/3h/4h windows to 2/3/4 stops', () => {
   assert.equal(determineStopCount(240, 3), 3);
 });
 
-test('pickAnchorCandidate prefers dateStyle signals for FOOD and SCENIC', () => {
+test('pickAnchorCandidate prefers vibe signals for ROMANTIC and ACTIVE', () => {
   const ranked = [
     {
-      candidate: candidate('activity', { types: ['museum'], tags: ['ARTSY'] }),
+      candidate: candidate('activity', { types: ['park'], tags: ['NATURE'] }),
       score: 0.95,
       distanceM: 500,
       breakdown: { qualityScore: 0.8, fitScore: 0.8, styleVibeScore: 0.6, avoidPenalty: 0, diversityPenalty: 0 },
     },
     {
-      candidate: candidate('food', { types: ['restaurant'], tags: ['COZY', 'DATE_NIGHT'] }),
+      candidate: candidate('romantic', { types: ['restaurant'], tags: ['ROMANTIC', 'DATE_NIGHT'] }),
       score: 0.85,
       distanceM: 600,
       breakdown: { qualityScore: 0.8, fitScore: 0.8, styleVibeScore: 0.7, avoidPenalty: 0, diversityPenalty: 0 },
     },
+  ] satisfies ScoredCandidate[];
+
+  assert.equal(pickAnchorCandidate('ROMANTIC', ranked)?.candidate.externalId, 'romantic');
+  assert.equal(pickAnchorCandidate('ACTIVE', ranked)?.candidate.externalId, 'activity');
+});
+
+test('nearby leg validation enforces 2km per-leg radius', () => {
+  assert.equal(hasOnlyNearbyLegs([{ from: 0, to: 1, mode: 'TRANSIT', durationMin: 10, distanceM: 2_000 }]), true);
+  assert.equal(hasOnlyNearbyLegs([{ from: 0, to: 1, mode: 'TRANSIT', durationMin: 10, distanceM: 2_001 }]), false);
+});
+
+test('origin radius filter removes candidates beyond 2km', () => {
+  const ranked = [
     {
-      candidate: candidate('scenic', { types: ['park'], tags: ['NATURE', 'ROMANTIC'] }),
+      candidate: candidate('near'),
+      distanceM: 1_500,
       score: 0.8,
-      distanceM: 700,
-      breakdown: { qualityScore: 0.8, fitScore: 0.8, styleVibeScore: 0.7, avoidPenalty: 0, diversityPenalty: 0 },
+      breakdown: { qualityScore: 0.8, fitScore: 0.8, styleVibeScore: 0.8, avoidPenalty: 0, diversityPenalty: 0 },
+    },
+    {
+      candidate: candidate('far'),
+      distanceM: 10_500,
+      score: 0.99,
+      breakdown: { qualityScore: 0.9, fitScore: 0.9, styleVibeScore: 0.9, avoidPenalty: 0, diversityPenalty: 0 },
     },
   ] satisfies ScoredCandidate[];
 
-  assert.equal(pickAnchorCandidate('FOOD', ranked)?.candidate.externalId, 'food');
-  assert.equal(pickAnchorCandidate('SCENIC', ranked)?.candidate.externalId, 'scenic');
+  const filtered = filterCandidatesWithinOriginRadius(ranked);
+  assert.deepEqual(filtered.map((item) => item.candidate.externalId), ['near']);
 });
 
-test('itinerary builder assembles stops with reason text and totals', () => {
-  const builder = new ItineraryBuilder(new ScoringService());
+test('itinerary builder assembles routed legs, totals, and booking labels', async () => {
+  const builder = new ItineraryBuilder(new ScoringService(), buildDirectionsService(300));
 
-  const response = builder.build(buildRequest({ durationMin: 240, dateStyle: 'SCENIC' }), [
-    candidate('scenic-1', { types: ['park'], tags: ['NATURE', 'ROMANTIC'] }),
-    candidate('scenic-2', { types: ['tourist_attraction'], tags: ['ICONIC'] }),
+  const response = await builder.build(buildRequest({ durationMin: 240, vibe: 'ACTIVE' }), [
+    candidate('active-1', { types: ['park'], tags: ['NATURE', 'ROMANTIC'], booking: { score: 42, label: 'CHECK_AVAILABILITY' } }),
+    candidate('active-2', { types: ['tourist_attraction'], tags: ['ICONIC'] }),
     candidate('food-1', { types: ['restaurant'], tags: ['COZY'] }),
     candidate('activity-1', { types: ['museum'], tags: ['ARTSY'] }),
   ]);
 
   assert.equal(response.stops.length, 4);
   assert.ok(response.stops.every((stop) => stop.reason.length > 0));
+  assert.equal(response.stops[0]?.booking?.label, 'CHECK_AVAILABILITY');
   assert.equal(response.totals.durationMin, 240);
   assert.ok(response.legs.length > 0);
-});
-
-test('itinerary builder keeps the selected anchor as the first stop', () => {
-  const builder = new ItineraryBuilder(new ScoringService());
-
-  const response = builder.build(buildRequest({ durationMin: 180, dateStyle: 'FOOD', vibe: 'ACTIVE' }), [
-    candidate('food-anchor', {
-      types: ['restaurant'],
-      tags: ['COZY', 'DATE_NIGHT'],
-      rating: 4.1,
-      reviewCount: 150,
-    }),
-    candidate('high-score-activity', {
-      types: ['museum'],
-      tags: ['ICONIC', 'ARTSY'],
-      rating: 4.9,
-      reviewCount: 4200,
-    }),
-    candidate('backup', {
-      types: ['tourist_attraction'],
-      tags: ['ICONIC'],
-      rating: 4.7,
-      reviewCount: 1800,
-    }),
-  ]);
-
-  assert.equal(response.stops[0]?.name, 'food-anchor');
+  assert.ok(response.totals.walkingDistanceM > 0);
 });

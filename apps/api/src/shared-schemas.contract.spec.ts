@@ -18,7 +18,6 @@ test('shared schemas reject invalid itinerary payload', () => {
     startTime: '18:30',
     durationMin: 180,
     budget: '$$',
-    dateStyle: 'FOOD',
     vibe: 'ROMANTIC',
   });
 

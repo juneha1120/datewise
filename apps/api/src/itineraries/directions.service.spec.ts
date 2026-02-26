@@ -1,0 +1,72 @@
+import { test } from 'node:test';
+import * as assert from 'node:assert/strict';
+import { DirectionsService } from './directions.service';
+
+test('routeLeg maps walking leg from Google directions payload', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    ({
+      ok: true,
+      json: async () => ({
+        status: 'OK',
+        routes: [
+          {
+            legs: [
+              {
+                distance: { value: 900 },
+                duration: { value: 600 },
+                steps: [{ travel_mode: 'WALKING', distance: { value: 900 } }],
+              },
+            ],
+          },
+        ],
+      }),
+    }) as Response;
+
+  try {
+    const service = new DirectionsService();
+    const leg = await service.routeLeg({ lat: 1.3, lng: 103.8 }, { lat: 1.31, lng: 103.82 });
+
+    assert.equal(leg.mode, 'TRANSIT');
+    assert.equal(leg.distanceM, 900);
+    assert.equal(leg.walkingDistanceM, 900);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('routeLeg sums transit walking steps only', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    ({
+      ok: true,
+      json: async () => ({
+        status: 'OK',
+        routes: [
+          {
+            legs: [
+              {
+                distance: { value: 5000 },
+                duration: { value: 1200 },
+                steps: [
+                  { travel_mode: 'WALKING', distance: { value: 350 } },
+                  { travel_mode: 'TRANSIT', distance: { value: 4000 } },
+                  { travel_mode: 'WALKING', distance: { value: 200 } },
+                ],
+              },
+            ],
+          },
+        ],
+      }),
+    }) as Response;
+
+  try {
+    const service = new DirectionsService();
+    const leg = await service.routeLeg({ lat: 1.3, lng: 103.8 }, { lat: 1.31, lng: 103.82 });
+
+    assert.equal(leg.mode, 'TRANSIT');
+    assert.equal(leg.walkingDistanceM, 550);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

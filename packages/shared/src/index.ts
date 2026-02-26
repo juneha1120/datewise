@@ -42,7 +42,7 @@ const TimeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/u, 'Invalid time 
 
 export const BudgetSchema = z.enum(['$', '$$', '$$$']);
 export const DateStyleOptionSchema = z.enum(['FOOD', 'ACTIVITY', 'EVENT', 'SCENIC', 'SURPRISE']);
-export const VibeOptionSchema = z.enum(['CHILL', 'ACTIVE', 'ROMANTIC', 'ADVENTUROUS']);
+export const VibeOptionSchema = z.enum(['CHILL', 'ROMANTIC', 'CREATIVE', 'PLAYFUL', 'ACTIVE', 'LUXE']);
 export const FoodPreferenceSchema = z.enum(['VEG', 'HALAL_FRIENDLY', 'NO_ALCOHOL', 'NO_SEAFOOD']);
 export const AvoidPreferenceSchema = z.enum(['OUTDOOR', 'PHYSICAL', 'CROWDED', 'LOUD']);
 export const TransportSchema = z.enum(['MIN_WALK', 'TRANSIT', 'DRIVE_OK', 'WALK_OK']);
@@ -61,6 +61,13 @@ export const TagSchema = z.enum([
 
 export const GenerateItineraryOriginSchema = PlaceDetailsResponseSchema;
 
+
+export const BookingLikelihoodSchema = z.enum(['BOOK_AHEAD', 'CHECK_AVAILABILITY', 'WALK_IN_LIKELY']);
+export const BookingSignalSchema = z.object({
+  score: z.number().int().min(0),
+  label: BookingLikelihoodSchema,
+});
+
 export const CandidateSchema = z.object({
   kind: z.enum(['PLACE', 'EVENT']),
   externalId: z.string().min(1),
@@ -73,6 +80,7 @@ export const CandidateSchema = z.object({
   priceLevel: z.number().int().min(0).max(4).optional(),
   types: z.array(z.string().min(1)).optional(),
   tags: z.array(TagSchema).optional(),
+  booking: BookingSignalSchema.optional(),
 });
 
 export const DebugPlaceCandidatesQuerySchema = z.object({
@@ -90,11 +98,9 @@ export const GenerateItineraryRequestSchema = z.object({
   startTime: TimeSchema,
   durationMin: z.number().int().min(30).max(1440),
   budget: BudgetSchema,
-  dateStyle: DateStyleOptionSchema,
   vibe: VibeOptionSchema,
   food: z.array(FoodPreferenceSchema).optional(),
   avoid: z.array(AvoidPreferenceSchema).optional(),
-  transport: TransportSchema.optional(),
 });
 
 export const ItineraryStopSchema = z.object({
@@ -108,6 +114,7 @@ export const ItineraryStopSchema = z.object({
   reviewCount: z.number().int().min(0),
   priceLevel: z.number().int().min(0).max(4),
   tags: z.array(z.string().min(1)),
+  booking: BookingSignalSchema.optional(),
   reason: z.string().min(1),
 });
 
@@ -132,7 +139,16 @@ export const GenerateItineraryResponseSchema = z.object({
   meta: z.object({
     usedCache: z.boolean(),
     warnings: z.array(z.string()),
+    textSearchOptions: z.array(z.string()).optional(),
   }),
+});
+
+
+export const ReplaceStopWithTextSearchRequestSchema = z.object({
+  originPlaceId: z.string().min(1),
+  stopIndex: z.number().int().min(0),
+  query: z.string().min(2).max(120),
+  itinerary: GenerateItineraryResponseSchema,
 });
 
 export type Vibe = z.infer<typeof VibeSchema>;
@@ -152,9 +168,12 @@ export type Tag = z.infer<typeof TagSchema>;
 export type GenerateItineraryOrigin = z.infer<typeof GenerateItineraryOriginSchema>;
 export type GenerateItineraryRequest = z.infer<typeof GenerateItineraryRequestSchema>;
 export type Candidate = z.infer<typeof CandidateSchema>;
+export type BookingLikelihood = z.infer<typeof BookingLikelihoodSchema>;
+export type BookingSignal = z.infer<typeof BookingSignalSchema>;
 export type DebugPlaceCandidatesQuery = z.infer<typeof DebugPlaceCandidatesQuerySchema>;
 export type DebugPlaceCandidatesResponse = z.infer<typeof DebugPlaceCandidatesResponseSchema>;
 export type ItineraryStop = z.infer<typeof ItineraryStopSchema>;
 export type ItineraryLeg = z.infer<typeof ItineraryLegSchema>;
 export type ItineraryTotals = z.infer<typeof ItineraryTotalsSchema>;
 export type GenerateItineraryResponse = z.infer<typeof GenerateItineraryResponseSchema>;
+export type ReplaceStopWithTextSearchRequest = z.infer<typeof ReplaceStopWithTextSearchRequestSchema>;

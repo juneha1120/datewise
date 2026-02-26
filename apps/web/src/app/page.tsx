@@ -4,23 +4,20 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import {
   AvoidPreference,
   Budget,
-  DateStyleOption,
   FoodPreference,
   GenerateItineraryRequest,
   GenerateItineraryResponse,
   GenerateItineraryResponseSchema,
+  ReplaceStopWithTextSearchRequest,
   PlaceDetailsResponse,
   PlaceDetailsResponseSchema,
   PlacesAutocompleteResponse,
   PlacesAutocompleteResponseSchema,
-  Transport,
   VibeOption,
 } from '@datewise/shared';
 
 const budgetOptions: Budget[] = ['$', '$$', '$$$'];
-const transportOptions: Transport[] = ['MIN_WALK', 'TRANSIT', 'DRIVE_OK', 'WALK_OK'];
-const dateStyleOptions: DateStyleOption[] = ['FOOD', 'ACTIVITY', 'EVENT', 'SCENIC', 'SURPRISE'];
-const vibeOptions: VibeOption[] = ['CHILL', 'ACTIVE', 'ROMANTIC', 'ADVENTUROUS'];
+const vibeOptions: VibeOption[] = ['CHILL', 'ROMANTIC', 'CREATIVE', 'PLAYFUL', 'ACTIVE', 'LUXE'];
 const foodOptions: FoodPreference[] = ['VEG', 'HALAL_FRIENDLY', 'NO_ALCOHOL', 'NO_SEAFOOD'];
 const avoidOptions: AvoidPreference[] = ['OUTDOOR', 'PHYSICAL', 'CROWDED', 'LOUD'];
 
@@ -302,13 +299,13 @@ export default function HomePage() {
   const [startTime, setStartTime] = useState('18:00');
   const [durationMin, setDurationMin] = useState('180');
   const [budget, setBudget] = useState<Budget>('$$');
-  const [transport, setTransport] = useState<Transport | ''>('');
-  const [dateStyle, setDateStyle] = useState<DateStyleOption>('SCENIC');
   const [vibe, setVibe] = useState<VibeOption>('ROMANTIC');
   const [food, setFood] = useState<FoodPreference[]>([]);
   const [avoid, setAvoid] = useState<AvoidPreference[]>([]);
   const [itinerary, setItinerary] = useState<GenerateItineraryResponse | null>(null);
   const [generateError, setGenerateError] = useState<string | null>(null);
+  const [selectedTextQuery, setSelectedTextQuery] = useState('');
+  const [replaceIndex, setReplaceIndex] = useState('0');
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -394,20 +391,42 @@ export default function HomePage() {
       startTime,
       durationMin: Number(durationMin),
       budget,
-      dateStyle,
       vibe,
       food,
       avoid,
-      transport: transport || undefined,
     };
 
     try {
       const responseBody = await postToWebApi('/api/itineraries/generate', request);
       const parsed = GenerateItineraryResponseSchema.parse(responseBody);
       setItinerary(parsed);
+      setSelectedTextQuery(parsed.meta.textSearchOptions?.[0] ?? "");
+      setReplaceIndex('0');
     } catch (caughtError) {
       setItinerary(null);
       setGenerateError(toFriendlyErrorMessage('Failed to generate itinerary.', caughtError));
+    }
+  }
+
+
+  async function onReplaceStop() {
+    if (!selectedOrigin || !itinerary || !selectedTextQuery) {
+      return;
+    }
+
+    const request: ReplaceStopWithTextSearchRequest = {
+      originPlaceId: selectedOrigin.placeId,
+      stopIndex: Number(replaceIndex),
+      query: selectedTextQuery,
+      itinerary,
+    };
+
+    try {
+      const responseBody = await postToWebApi('/api/itineraries/replace-stop-with-text-search', request);
+      const parsed = GenerateItineraryResponseSchema.parse(responseBody);
+      setItinerary(parsed);
+    } catch (caughtError) {
+      setGenerateError(toFriendlyErrorMessage('Failed to replace stop.', caughtError));
     }
   }
 
@@ -479,22 +498,6 @@ export default function HomePage() {
           </select>
           <br />
 
-          <label htmlFor="transport">Transport (optional)</label>
-          <select id="transport" value={transport} onChange={(event) => setTransport(event.target.value as Transport | '')}>
-            <option value="">No preference</option>
-            {transportOptions.map((option) => (
-              <option key={option} value={option}>{option}</option>
-            ))}
-          </select>
-          <br />
-
-          <label htmlFor="date-style">Date style</label>
-          <select id="date-style" value={dateStyle} onChange={(event) => setDateStyle(event.target.value as DateStyleOption)}>
-            {dateStyleOptions.map((option) => (
-              <option key={option} value={option}>{option}</option>
-            ))}
-          </select>
-          <br />
 
           <label htmlFor="vibe">Vibe</label>
           <select id="vibe" value={vibe} onChange={(event) => setVibe(event.target.value as VibeOption)}>
@@ -544,9 +547,31 @@ export default function HomePage() {
               {itinerary.stops.map((stop, index) => (
                 <li key={`${stop.name}-${index}`}>
                   {stop.name} ({stop.kind})
+                  {stop.booking ? ` — ${stop.booking.label}` : ''}
                 </li>
               ))}
             </ul>
+            {itinerary.meta.textSearchOptions && itinerary.meta.textSearchOptions.length > 0 ? (
+              <div>
+                <h3>Try replacing a stop</h3>
+                <label htmlFor="replace-index">Stop index</label>
+                <input
+                  id="replace-index"
+                  type="number"
+                  min={0}
+                  max={Math.max(itinerary.stops.length - 1, 0)}
+                  value={replaceIndex}
+                  onChange={(event) => setReplaceIndex(event.target.value)}
+                />
+                <label htmlFor="text-query">Text search option</label>
+                <select id="text-query" value={selectedTextQuery} onChange={(event) => setSelectedTextQuery(event.target.value)}>
+                  {itinerary.meta.textSearchOptions.map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
+                <button type="button" onClick={() => { void onReplaceStop(); }}>Replace stop</button>
+              </div>
+            ) : null}
           </div>
         ) : null}
       </section>

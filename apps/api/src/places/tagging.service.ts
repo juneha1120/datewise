@@ -11,17 +11,28 @@ const TaggingInputSchema = z.object({
 const typeTagMap: Readonly<Record<string, readonly Tag[]>> = {
   museum: ['ARTSY'],
   art_gallery: ['ARTSY'],
+  movie_theater: ['DATE_NIGHT', 'COZY'],
   tourist_attraction: ['ICONIC', 'DATE_NIGHT'],
   park: ['NATURE', 'ROMANTIC'],
   botanical_garden: ['NATURE', 'ROMANTIC'],
+  natural_feature: ['NATURE', 'ICONIC'],
   cafe: ['COZY', 'DATE_NIGHT'],
   bakery: ['COZY'],
+  restaurant: ['DATE_NIGHT'],
+  bar: ['DATE_NIGHT', 'ROMANTIC'],
+  spa: ['COZY', 'ROMANTIC'],
+  shopping_mall: ['CROWDED'],
+  book_store: ['COZY'],
+  amusement_park: ['ICONIC'],
 };
 
 const snippetSignals: ReadonlyArray<{ pattern: RegExp; tags: readonly Tag[] }> = [
   { pattern: /\b(date\s*night|couple|anniversary|intimate)\b/iu, tags: ['DATE_NIGHT', 'ROMANTIC'] },
-  { pattern: /\bromantic|sunset|candle\b/iu, tags: ['ROMANTIC'] },
-  { pattern: /\bcozy|quiet|relaxing\b/iu, tags: ['COZY'] },
+  { pattern: /\bromantic|sunset|candle|proposal\b/iu, tags: ['ROMANTIC'] },
+  { pattern: /\bcozy|quiet|relaxing|chill|aesthetic\b/iu, tags: ['COZY'] },
+  { pattern: /\b(gallery|creative|hands-on|pottery|workshop|exhibit)\b/iu, tags: ['ARTSY'] },
+  { pattern: /\b(scenic|greenery|nature|river|trail|park)\b/iu, tags: ['NATURE'] },
+  { pattern: /\biconic|landmark|must\s*visit|famous\b/iu, tags: ['ICONIC'] },
   { pattern: /\b(loud|noisy|blasting\s+music)\b/iu, tags: ['LOUD'] },
   { pattern: /\b(crowded|packed|long\s+queue|busy)\b/iu, tags: ['CROWDED'] },
 ];
