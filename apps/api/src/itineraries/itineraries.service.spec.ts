@@ -38,7 +38,6 @@ function request(overrides: Partial<GenerateItineraryRequest> = {}): GenerateIti
     startTime: '18:30',
     durationMin: 180,
     budget: '$$',
-    dateStyle: 'FOOD',
     vibe: 'ROMANTIC',
     ...overrides,
   };
@@ -58,6 +57,7 @@ test('generateItinerary returns places-only stops from nearby candidates', async
       originPlaceId: 'abc',
       candidates: [candidate('food-1'), candidate('food-2'), candidate('food-3')],
     }),
+    textSearchOptionsForVibe: () => ['romantic restaurant Singapore'],
   } as unknown as PlacesService;
 
   const mockedDirectionsService = {
@@ -93,6 +93,7 @@ test('generateItinerary uses canonical origin details from placeId for downstrea
       originPlaceId: 'abc',
       candidates: [candidate('food-1'), candidate('food-2')],
     }),
+    textSearchOptionsForVibe: () => ['romantic restaurant Singapore'],
   } as unknown as PlacesService;
 
   const mockedBuilder = {
@@ -103,7 +104,7 @@ test('generateItinerary uses canonical origin details from placeId for downstrea
         stops: [],
         legs: [],
         totals: { durationMin: input.durationMin, walkingDistanceM: 0 },
-        meta: { usedCache: false, warnings: [] },
+        meta: { usedCache: false, warnings: [], textSearchOptions: [] },
       };
     },
   } as unknown as ItineraryBuilder;

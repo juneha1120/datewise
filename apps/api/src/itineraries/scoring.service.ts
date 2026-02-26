@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { AvoidPreference, Budget, Candidate, DateStyleOption, VibeOption } from '@datewise/shared';
+import { AvoidPreference, Budget, Candidate, VibeOption } from '@datewise/shared';
 
 export type ScoringBreakdown = {
   qualityScore: number;
@@ -22,7 +22,6 @@ export type ScoreCandidatesInput = {
     lng: number;
   };
   budget: Budget;
-  dateStyle: DateStyleOption;
   vibe: VibeOption;
   avoid?: readonly AvoidPreference[];
   selected?: readonly Candidate[];
@@ -52,19 +51,13 @@ const BUDGET_TARGET_LEVEL: Readonly<Record<Budget, number>> = {
   $$$: 3,
 };
 
-const STYLE_TAGS: Readonly<Record<DateStyleOption, readonly string[]>> = {
-  FOOD: ['COZY', 'DATE_NIGHT'],
-  ACTIVITY: ['ARTSY', 'ICONIC', 'NATURE'],
-  EVENT: ['DATE_NIGHT', 'ICONIC'],
-  SCENIC: ['NATURE', 'ROMANTIC', 'ICONIC'],
-  SURPRISE: ['ARTSY', 'ROMANTIC', 'ICONIC'],
-};
-
-const VIBE_TAGS: Readonly<Record<VibeOption, readonly string[]>> = {
-  CHILL: ['COZY', 'NATURE'],
-  ACTIVE: ['ICONIC', 'ARTSY'],
-  ROMANTIC: ['ROMANTIC', 'DATE_NIGHT', 'COZY'],
-  ADVENTUROUS: ['ICONIC', 'NATURE', 'ARTSY'],
+const VIBE_SIGNALS: Readonly<Record<VibeOption, readonly string[]>> = {
+  CHILL: ['COZY', 'NATURE', 'cafe', 'park', 'dessert_shop'],
+  ROMANTIC: ['ROMANTIC', 'DATE_NIGHT', 'bar', 'restaurant', 'tourist_attraction'],
+  CREATIVE: ['ARTSY', 'art_gallery', 'museum', 'workshop'],
+  PLAYFUL: ['amusement_park', 'bowling_alley', 'arcade', 'mini_golf'],
+  ACTIVE: ['NATURE', 'park', 'hiking_area', 'sports_complex'],
+  LUXE: ['PREMIUM', 'fine_dining', 'spa', 'bar'],
 };
 
 const AVOID_TO_SIGNALS: Readonly<Record<AvoidPreference, readonly string[]>> = {
@@ -142,7 +135,7 @@ export class ScoringService {
 
         const qualityScore = this.computeQualityScore(candidate);
         const fitScore = this.computeFitScore(candidate, input.budget, distanceM);
-        const styleVibeScore = this.computeStyleVibeScore(candidate, input.dateStyle, input.vibe);
+        const styleVibeScore = this.computeVibeScore(candidate, input.vibe);
         const avoidPenalty = this.computeAvoidPenalty(candidate, input.avoid);
         const diversityPenalty = this.computeDiversityPenalty(candidate, seenTypeCounts, seenTagCounts);
 
@@ -201,19 +194,15 @@ export class ScoringService {
     return clamp01(0.75 * distanceScore + 0.25 * budgetScore);
   }
 
-  private computeStyleVibeScore(candidate: Candidate, dateStyle: DateStyleOption, vibe: VibeOption): number {
+  private computeVibeScore(candidate: Candidate, vibe: VibeOption): number {
     const signals = normalizeSignals([...(candidate.tags ?? []), ...(candidate.types ?? [])]);
 
-    const styleSignals = STYLE_TAGS[dateStyle].map((signal) => signal.toLowerCase());
-    const vibeSignals = VIBE_TAGS[vibe].map((signal) => signal.toLowerCase());
+    const vibeSignals = VIBE_SIGNALS[vibe].map((signal) => signal.toLowerCase());
 
-    const styleMatches = styleSignals.filter((signal) => signals.has(signal)).length;
     const vibeMatches = vibeSignals.filter((signal) => signals.has(signal)).length;
-
-    const styleScore = styleSignals.length === 0 ? 0 : styleMatches / styleSignals.length;
     const vibeScore = vibeSignals.length === 0 ? 0 : vibeMatches / vibeSignals.length;
 
-    return clamp01(0.5 * styleScore + 0.5 * vibeScore);
+    return clamp01(vibeScore);
   }
 
   private computeAvoidPenalty(candidate: Candidate, avoid: readonly AvoidPreference[] | undefined): number {

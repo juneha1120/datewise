@@ -4,76 +4,21 @@
 Query
 - `q`: string (required, min length 2, max length 120)
 
-Response
-```json
-{
-  "suggestions": [
-    {
-      "placeId": "string",
-      "primaryText": "string",
-      "secondaryText": "string"
-    }
-  ]
-}
-```
-
 ## GET /v1/places/details
 Query
 - `placeId`: string (required, non-empty)
-
-Response
-```json
-{
-  "placeId": "string",
-  "name": "string",
-  "formattedAddress": "string",
-  "lat": 1.300,
-  "lng": 103.800,
-  "types": ["string"]
-}
-```
-
-Provider notes
-- `/v1/places/autocomplete`, `/v1/places/details`, and `/v1/places/debug/candidates` are backed by Google Places API (Autocomplete + Place Details + Nearby Search).
-- Requests are restricted to Singapore (`country=SG`) with Singapore proximity bias.
-- External calls use timeout <= 5s and max 2 retries.
-- Itinerary routing (`legs[]` + `totals.walkingDistanceM`) is computed with Google Directions (backend-only API key) and cached before external calls.
-- Itinerary assembly enforces strict nearby caps during candidate generation: candidates farther than 2km from origin are filtered out, and each next-stop candidate is pre-screened to stay within 2km of the prior stop before scoring; bounded retries still run if routed legs exceed 2km.
-- `/v1/places/debug/candidates` now returns only candidates within 2km of the resolved origin coordinates.
-- For itinerary generation, backend resolves canonical origin coordinates from `origin.placeId` and uses those coordinates for distance filtering/scoring.
-- Nearby candidate generation uses an explicit `includedTypes` set for date use-cases (food/drinks, activities, scenic, and rain-proof stops).
-- If Google rejects a typed nearby request (e.g., unsupported type), backend retries nearby search without `includedTypes` so itinerary generation still succeeds.
-- Candidate generation is enriched with Google Text Search queries (creative/playful/romantic/outdoor/cozy date intents) and merged with nearby results before dedupe/filtering.
-- Candidates include a booking signal (`BOOK_AHEAD|CHECK_AVAILABILITY|WALK_IN_LIKELY`) scored from category/price/review/keyword heuristics.
-- Candidate tags are deterministic heuristic labels from place types, price level, and snippets (e.g. `ARTSY`, `ROMANTIC`, `LOUD`).
-
 
 ## GET /v1/places/debug/candidates
 Query
 - `originPlaceId`: string (required, non-empty)
 
-Response
-```json
-{
-  "originPlaceId": "string",
-  "candidates": [
-    {
-      "kind": "PLACE|EVENT",
-      "externalId": "string",
-      "name": "string",
-      "lat": 1.3,
-      "lng": 103.8,
-      "address": "string",
-      "rating": 4.5,
-      "reviewCount": 1200,
-      "priceLevel": 2,
-      "types": ["cafe", "restaurant"],
-      "tags": ["COZY", "DATE_NIGHT", "BUDGET_FRIENDLY"],
-      "booking": { "score": 68, "label": "BOOK_AHEAD" }
-    }
-  ]
-}
-```
+Behavior
+- Uses Google Places Nearby Search with curated `includedTypes` only (no text-search fanout during initial candidate generation).
+- Strictly filters candidates to within 2km of canonical origin coordinates.
+- If typed Nearby Search returns 400 (unsupported type), retries without `includedTypes`.
+- Candidate payload includes deterministic `tags` and `booking` signal (`BOOK_AHEAD`, `CHECK_AVAILABILITY`, `WALK_IN_LIKELY`).
+
+---
 
 ## POST /v1/itineraries/generate
 Request
@@ -91,20 +36,19 @@ Request
   "startTime": "HH:mm",
   "durationMin": 120,
   "budget": "$|$$|$$$",
-  "dateStyle": "FOOD|ACTIVITY|EVENT|SCENIC|SURPRISE",
-  "vibe": "CHILL|ACTIVE|ROMANTIC|ADVENTUROUS",
-  "food": ["VEG","HALAL_FRIENDLY","NO_ALCOHOL","NO_SEAFOOD"], // optional
-  "avoid": ["OUTDOOR","PHYSICAL","CROWDED","LOUD"] // optional
+  "vibe": "CHILL|ROMANTIC|CREATIVE|PLAYFUL|ACTIVE|LUXE",
+  "food": ["VEG","HALAL_FRIENDLY","NO_ALCOHOL","NO_SEAFOOD"],
+  "avoid": ["OUTDOOR","PHYSICAL","CROWDED","LOUD"]
 }
 ```
 
-Response
+Response (excerpt)
 ```json
 {
-  "itineraryId": "uuid",
+  "itineraryId": "string",
   "stops": [
     {
-      "kind": "PLACE|EVENT",
+      "kind": "PLACE",
       "name": "string",
       "lat": 1.0,
       "lng": 103.0,
@@ -113,29 +57,56 @@ Response
       "rating": 4.6,
       "reviewCount": 1200,
       "priceLevel": 2,
-      "tags": ["CHILL","DATE_NIGHT"],
+      "tags": ["COZY", "DATE_NIGHT"],
+      "booking": { "score": 68, "label": "CHECK_AVAILABILITY" },
       "reason": "string"
     }
   ],
-  "legs": [
-    { "from": 0, "to": 1, "mode": "WALK|TRANSIT|DRIVE", "durationMin": 12, "distanceM": 850 }
-  ],
-  "totals": { "durationMin": 180, "walkingDistanceM": 1200 },
-  "meta": { "usedCache": true, "warnings": [] }
+  "meta": {
+    "usedCache": false,
+    "warnings": [],
+    "textSearchOptions": ["pottery workshop Singapore", "art workshop Singapore"]
+  }
 }
 ```
 
-## POST /v1/itineraries/{id}/swap
+Behavior
+- Canonical origin is resolved from `origin.placeId` before scoring/assembly.
+- Candidate and routed-leg hard cap is 2km.
+- `booking` is displayed per stop and **does not** affect scoring.
+- Initial itinerary does not run text-search; instead `meta.textSearchOptions` is returned for optional post-generation replacement.
+
+### Vibe mapping (must-include signals + itinerary design)
+- `CHILL`: cafe/park/book_store + `COZY`/`NATURE`; combo aims for slow, low-noise flow (cafe → stroll/park → dessert).
+- `ROMANTIC`: restaurant/bar/tourist_attraction + `ROMANTIC`/`DATE_NIGHT`; combo aims for intimate meal + scenic/photo stop.
+- `CREATIVE`: art_gallery/museum/workshop-like signals + `ARTSY`; combo aims for hands-on or exhibition + cozy debrief stop.
+- `PLAYFUL`: amusement_park/bowling_alley/arcade + `ICONIC`; combo aims for active game stop + casual food/chill stop.
+- `ACTIVE`: park/natural_feature/tourist_attraction + `NATURE`; combo aims for outdoors movement + recovery stop.
+- `LUXE`: fine-dining/bar/spa-like signals + `PREMIUM`; combo aims for premium dining/lounge sequence.
+
+Tagging is derived from type + review snippets (e.g. `cozy`, `workshop`, `landmark`, `crowded`, `noisy`) and mapped to shared tags deterministically.
+
+---
+
+## POST /v1/itineraries/replace-stop-with-text-search
 Request
 ```json
-{ "stopIndex": 1, "strategy": "SIMILAR|CLOSER|CHEAPER" }
+{
+  "originPlaceId": "string",
+  "stopIndex": 1,
+  "query": "pottery workshop Singapore",
+  "itinerary": { "...": "Generate response payload" }
+}
 ```
 
-## GET /v1/itineraries/{id}
-Returns saved snapshot itinerary
+Behavior
+- Runs Google Places Text Search for selected query (biased near origin).
+- Replaces one stop (by index) with best available result.
+- Returns updated itinerary payload with warning entry in `meta.warnings`.
 
-## (Phase 2) POST /v1/itineraries/{id}/publish
-## (Phase 2) POST /v1/public/{id}/like
-## (Phase 2) GET /v1/public/feed?area=...
+---
 
-- Backend requires `GOOGLE_MAPS_API_KEY` in repository root `.env` (or `.env.local`).
+## Runtime requirements
+- `GOOGLE_MAPS_API_KEY` in repo root `.env`.
+- Enabled APIs: Google Places API (New) and Directions API.
+- External API calls use timeout <= 5s and retries <= 2 with structured error mapping.

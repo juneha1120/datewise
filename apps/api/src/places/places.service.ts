@@ -8,6 +8,7 @@ import {
   PlaceDetailsResponseSchema,
   PlacesAutocompleteResponse,
   PlacesAutocompleteResponseSchema,
+  VibeOption,
 } from '@datewise/shared';
 import { z } from 'zod';
 import { CacheStore, InMemoryCacheStore } from './cache';
@@ -42,35 +43,14 @@ const INCLUDED_NEARBY_TYPES = [
   'store',
 ] as const;
 
-const TEXT_SEARCH_QUERIES = [
-  'pottery workshop Singapore',
-  'art workshop Singapore',
-  'painting class Singapore',
-  'cooking class Singapore',
-  'perfume workshop Singapore',
-  'leather workshop Singapore',
-  'escape room Singapore',
-  'board game cafe Singapore',
-  'arcade Singapore',
-  'trampoline park Singapore',
-  'indoor playground adults Singapore',
-  'mini golf Singapore',
-  'rooftop bar Singapore',
-  'fine dining restaurant Singapore',
-  'romantic restaurant Singapore',
-  'skyline view Singapore',
-  'river walk Singapore',
-  'cycling park Singapore',
-  'hiking trail Singapore',
-  'nature trail Singapore',
-  'water sports Singapore',
-  'kayaking Singapore',
-  'aesthetic cafe Singapore',
-  'dessert cafe Singapore',
-  'wine bar Singapore',
-  'hidden cafe Singapore',
-  'speakeasy Singapore',
-] as const;
+const VIBE_TEXT_SEARCH_QUERY_MAP: Readonly<Record<VibeOption, readonly string[]>> = {
+  CHILL: ['aesthetic cafe Singapore', 'dessert cafe Singapore', 'hidden cafe Singapore', 'wine bar Singapore'],
+  ROMANTIC: ['rooftop bar Singapore', 'romantic restaurant Singapore', 'skyline view Singapore', 'river walk Singapore'],
+  CREATIVE: ['pottery workshop Singapore', 'art workshop Singapore', 'painting class Singapore', 'perfume workshop Singapore'],
+  PLAYFUL: ['escape room Singapore', 'board game cafe Singapore', 'arcade Singapore', 'mini golf Singapore'],
+  ACTIVE: ['cycling park Singapore', 'hiking trail Singapore', 'nature trail Singapore', 'kayaking Singapore'],
+  LUXE: ['fine dining restaurant Singapore', 'rooftop bar Singapore', 'spa Singapore', 'speakeasy Singapore'],
+};
 
 const BOOKING_KEYWORDS = [
   'reservation',
@@ -447,6 +427,40 @@ export class PlacesService {
 
   constructor(private readonly taggingService: TaggingService = new TaggingService()) {}
 
+  textSearchOptionsForVibe(vibe: VibeOption): string[] {
+    return [...(VIBE_TEXT_SEARCH_QUERY_MAP[vibe] ?? [])];
+  }
+
+  async searchTextCandidates(originPlaceId: string, textQuery: string): Promise<Candidate[]> {
+    const origin = await this.details(originPlaceId);
+    const payload = await fetchJsonWithRetry<unknown>(`${GOOGLE_API_BASE}/places:searchText`, {
+      method: 'POST',
+      headers: this.buildJsonHeaders(
+        'places.id,places.displayName.text,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.priceLevel,places.types,places.addressComponents.shortText,places.addressComponents.types,places.reviews.text.text',
+      ),
+      body: JSON.stringify({
+        textQuery,
+        pageSize: TEXT_SEARCH_PAGE_SIZE,
+        languageCode: 'en',
+        regionCode: 'SG',
+        locationBias: {
+          circle: {
+            center: {
+              latitude: origin.lat,
+              longitude: origin.lng,
+            },
+            radius: NEARBY_SEARCH_RADIUS_M,
+          },
+        },
+      }),
+    });
+
+    return googleNearbyToCandidates(payload, this.taggingService).filter((candidate) => {
+      return haversineDistanceMeters(origin, { lat: candidate.lat, lng: candidate.lng }) <= MAX_ORIGIN_DISTANCE_M;
+    });
+  }
+
+
   async autocomplete(query: string): Promise<PlacesAutocompleteResponse> {
     // Prefixes segregate cache entries by endpoint shape so keys cannot collide.
     const cacheKey = `autocomplete:${query}`;
@@ -519,52 +533,10 @@ export class PlacesService {
       nearbyResponse = await this.searchNearbyRaw(origin, false);
     }
 
-    const textSearchResponses = await Promise.allSettled(
-      TEXT_SEARCH_QUERIES.map((textQuery) =>
-        fetchJsonWithRetry<unknown>(`${GOOGLE_API_BASE}/places:searchText`, {
-          method: 'POST',
-          headers: this.buildJsonHeaders(
-            'places.id,places.displayName.text,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.priceLevel,places.types,places.addressComponents.shortText,places.addressComponents.types,places.reviews.text.text',
-          ),
-          body: JSON.stringify({
-            textQuery,
-            pageSize: TEXT_SEARCH_PAGE_SIZE,
-            languageCode: 'en',
-            regionCode: 'SG',
-            locationBias: {
-              circle: {
-                center: {
-                  latitude: origin.lat,
-                  longitude: origin.lng,
-                },
-                radius: NEARBY_SEARCH_RADIUS_M,
-              },
-            },
-          }),
-        }),
-      ),
-    );
-
-    const successfulTextSearchPayloads = textSearchResponses
-      .filter((result): result is PromiseFulfilledResult<unknown> => result.status === 'fulfilled')
-      .map((result) => result.value);
-
-    const failedTextSearches = textSearchResponses.length - successfulTextSearchPayloads.length;
-    if (failedTextSearches > 0) {
-      this.logger.warn(`Text search enrichment failed for ${failedTextSearches} queries; continuing with successful candidate sources.`);
-    }
-
     const nearbyCandidates = googleNearbyToCandidates(nearbyResponse, this.taggingService);
-    const textSearchCandidates = successfulTextSearchPayloads.flatMap((payload) =>
-      googleNearbyToCandidates(payload, this.taggingService),
-    );
 
-    const normalizedCandidates = mergeUniqueCandidates([...nearbyCandidates, ...textSearchCandidates]).filter((candidate) => {
+    const normalizedCandidates = mergeUniqueCandidates(nearbyCandidates).filter((candidate) => {
       return haversineDistanceMeters(origin, { lat: candidate.lat, lng: candidate.lng }) <= MAX_ORIGIN_DISTANCE_M;
-    });
-
-    const normalizedCandidates = googleNearbyToCandidates(response, this.taggingService).filter((candidate) => {
-      return haversineDistanceMeters(origin, { lat: candidate.lat, lng: candidate.lng }) <= 2_000;
     });
 
     const normalized = DebugPlaceCandidatesResponseSchema.parse({

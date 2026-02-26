@@ -1,6 +1,5 @@
 import {
   Candidate,
-  DateStyleOption,
   GenerateItineraryRequest,
   GenerateItineraryResponse,
   GenerateItineraryResponseSchema,
@@ -14,12 +13,13 @@ const MAX_CANDIDATE_POOL = 16;
 const MAX_ROUTE_VALIDATION_ATTEMPTS = 4;
 const MAX_NEARBY_DISTANCE_M = 2_000;
 
-const STYLE_ANCHOR_SIGNALS: Readonly<Record<DateStyleOption, readonly string[]>> = {
-  FOOD: ['restaurant', 'cafe', 'meal_takeaway', 'bakery', 'cozy', 'date_night'],
-  ACTIVITY: ['museum', 'tourist_attraction', 'amusement_center', 'artsy', 'iconic'],
-  EVENT: ['date_night', 'iconic', 'tourist_attraction'],
-  SCENIC: ['park', 'nature', 'romantic', 'iconic', 'tourist_attraction'],
-  SURPRISE: ['iconic', 'artsy', 'romantic', 'nature', 'cozy'],
+const VIBE_ANCHOR_SIGNALS: Readonly<Record<GenerateItineraryRequest['vibe'], readonly string[]>> = {
+  CHILL: ['cozy', 'cafe', 'park', 'nature'],
+  ROMANTIC: ['romantic', 'date_night', 'restaurant', 'bar'],
+  CREATIVE: ['artsy', 'art_gallery', 'museum', 'workshop'],
+  PLAYFUL: ['amusement_park', 'arcade', 'bowling_alley', 'iconic'],
+  ACTIVE: ['nature', 'park', 'tourist_attraction', 'hiking_area'],
+  LUXE: ['premium', 'bar', 'restaurant', 'iconic'],
 };
 
 function clamp(value: number, min: number, max: number): number {
@@ -37,8 +37,8 @@ export function determineStopCount(durationMin: number, availableCandidates: num
 }
 
 /** Picks a date-style anchor candidate from pre-ranked candidates. */
-export function pickAnchorCandidate(dateStyle: DateStyleOption, ranked: readonly ScoredCandidate[]): ScoredCandidate | undefined {
-  const anchorSignals = STYLE_ANCHOR_SIGNALS[dateStyle];
+export function pickAnchorCandidate(vibe: GenerateItineraryRequest['vibe'], ranked: readonly ScoredCandidate[]): ScoredCandidate | undefined {
+  const anchorSignals = VIBE_ANCHOR_SIGNALS[vibe];
 
   return [...ranked]
     .map((item) => {
@@ -109,7 +109,7 @@ function buildReason(item: ScoredCandidate, request: GenerateItineraryRequest, s
   const snippets: string[] = [];
 
   if (item.breakdown.styleVibeScore >= 0.45) {
-    snippets.push(`Strong ${request.dateStyle.toLowerCase()} + ${request.vibe.toLowerCase()} match`);
+    snippets.push(`Strong ${request.vibe.toLowerCase()} vibe match`);
   }
 
   if (item.breakdown.qualityScore >= 0.7) {
@@ -169,7 +169,7 @@ export class ItineraryBuilder {
   ): Candidate[] {
     const filteredPool = candidatePool.filter((item) => !rejectedExternalIds.has(item.candidate.externalId));
 
-    const anchor = pickAnchorCandidate(request.dateStyle, filteredPool);
+    const anchor = pickAnchorCandidate(request.vibe, filteredPool);
     const selected: Candidate[] = [];
 
     if (anchor) {
@@ -199,7 +199,6 @@ export class ItineraryBuilder {
       const next = this.scoringService.scoreCandidates({
         origin: request.origin,
         budget: request.budget,
-        dateStyle: request.dateStyle,
         vibe: request.vibe,
         avoid: request.avoid,
         selected,
@@ -221,7 +220,6 @@ export class ItineraryBuilder {
     const initialRanked = this.scoringService.scoreCandidates({
       origin: request.origin,
       budget: request.budget,
-      dateStyle: request.dateStyle,
       vibe: request.vibe,
       avoid: request.avoid,
       candidates,
@@ -273,7 +271,6 @@ export class ItineraryBuilder {
     const finalRanked = this.scoringService.scoreCandidates({
       origin: request.origin,
       budget: request.budget,
-      dateStyle: request.dateStyle,
       vibe: request.vibe,
       avoid: request.avoid,
       selected: [],
@@ -297,6 +294,7 @@ export class ItineraryBuilder {
       reviewCount: item.candidate.reviewCount ?? 0,
       priceLevel: item.candidate.priceLevel ?? 2,
       tags: item.candidate.tags ?? [],
+      booking: item.candidate.booking,
       reason: buildReason(item, request, index),
     }));
 

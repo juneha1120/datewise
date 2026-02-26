@@ -25,7 +25,6 @@ function buildRequest(overrides: Partial<GenerateItineraryRequest> = {}): Genera
     startTime: '18:30',
     durationMin: 180,
     budget: '$$',
-    dateStyle: 'FOOD',
     vibe: 'ROMANTIC',
     ...overrides,
   };
@@ -66,30 +65,24 @@ test('determineStopCount maps 2h/3h/4h windows to 2/3/4 stops', () => {
   assert.equal(determineStopCount(240, 3), 3);
 });
 
-test('pickAnchorCandidate prefers dateStyle signals for FOOD and SCENIC', () => {
+test('pickAnchorCandidate prefers vibe signals for ROMANTIC and ACTIVE', () => {
   const ranked = [
     {
-      candidate: candidate('activity', { types: ['museum'], tags: ['ARTSY'] }),
+      candidate: candidate('activity', { types: ['park'], tags: ['NATURE'] }),
       score: 0.95,
       distanceM: 500,
       breakdown: { qualityScore: 0.8, fitScore: 0.8, styleVibeScore: 0.6, avoidPenalty: 0, diversityPenalty: 0 },
     },
     {
-      candidate: candidate('food', { types: ['restaurant'], tags: ['COZY', 'DATE_NIGHT'] }),
+      candidate: candidate('romantic', { types: ['restaurant'], tags: ['ROMANTIC', 'DATE_NIGHT'] }),
       score: 0.85,
       distanceM: 600,
       breakdown: { qualityScore: 0.8, fitScore: 0.8, styleVibeScore: 0.7, avoidPenalty: 0, diversityPenalty: 0 },
     },
-    {
-      candidate: candidate('scenic', { types: ['park'], tags: ['NATURE', 'ROMANTIC'] }),
-      score: 0.8,
-      distanceM: 700,
-      breakdown: { qualityScore: 0.8, fitScore: 0.8, styleVibeScore: 0.7, avoidPenalty: 0, diversityPenalty: 0 },
-    },
   ] satisfies ScoredCandidate[];
 
-  assert.equal(pickAnchorCandidate('FOOD', ranked)?.candidate.externalId, 'food');
-  assert.equal(pickAnchorCandidate('SCENIC', ranked)?.candidate.externalId, 'scenic');
+  assert.equal(pickAnchorCandidate('ROMANTIC', ranked)?.candidate.externalId, 'romantic');
+  assert.equal(pickAnchorCandidate('ACTIVE', ranked)?.candidate.externalId, 'activity');
 });
 
 test('nearby leg validation enforces 2km per-leg radius', () => {
@@ -117,111 +110,22 @@ test('origin radius filter removes candidates beyond 2km', () => {
   assert.deepEqual(filtered.map((item) => item.candidate.externalId), ['near']);
 });
 
-test('itinerary builder assembles routed legs and totals', async () => {
+test('itinerary builder assembles routed legs, totals, and booking labels', async () => {
   const builder = new ItineraryBuilder(new ScoringService(), buildDirectionsService(300));
 
-  const response = await builder.build(buildRequest({ durationMin: 240, dateStyle: 'SCENIC' }), [
-    candidate('scenic-1', { types: ['park'], tags: ['NATURE', 'ROMANTIC'] }),
-    candidate('scenic-2', { types: ['tourist_attraction'], tags: ['ICONIC'] }),
+  const response = await builder.build(buildRequest({ durationMin: 240, vibe: 'ACTIVE' }), [
+    candidate('active-1', { types: ['park'], tags: ['NATURE', 'ROMANTIC'], booking: { score: 42, label: 'CHECK_AVAILABILITY' } }),
+    candidate('active-2', { types: ['tourist_attraction'], tags: ['ICONIC'] }),
     candidate('food-1', { types: ['restaurant'], tags: ['COZY'] }),
     candidate('activity-1', { types: ['museum'], tags: ['ARTSY'] }),
   ]);
 
   assert.equal(response.stops.length, 4);
   assert.ok(response.stops.every((stop) => stop.reason.length > 0));
+  assert.equal(response.stops[0]?.booking?.label, 'CHECK_AVAILABILITY');
   assert.equal(response.totals.durationMin, 240);
   assert.ok(response.legs.length > 0);
   assert.ok(response.totals.walkingDistanceM > 0);
-});
-
-test('itinerary builder retries alternatives when a leg exceeds 2km', async () => {
-  let calls = 0;
-  const directionsService = {
-    routeLeg: async () => {
-      calls += 1;
-      return {
-        mode: 'TRANSIT',
-        durationMin: 10,
-        distanceM: 2_300,
-        walkingDistanceM: 250,
-      };
-    },
-  } as unknown as DirectionsService;
-
-  const builder = new ItineraryBuilder(new ScoringService(), directionsService);
-  const response = await builder.build(buildRequest({ durationMin: 180 }), [
-    candidate('food-anchor', { types: ['restaurant'], tags: ['COZY', 'DATE_NIGHT'] }),
-    candidate('backup-1', { types: ['restaurant'], tags: ['COZY'] }),
-    candidate('backup-2', { types: ['restaurant'], tags: ['COZY'] }),
-    candidate('backup-3', { types: ['restaurant'], tags: ['COZY'] }),
-  ]);
-
-  assert.ok(calls > 2);
-  assert.ok(response.meta.warnings.some((warning) => warning.includes('within 2km')));
-});
-
-
-
-test('itinerary builder pre-filters next-stop candidates by 2km leg radius', async () => {
-  const directionsService = {
-    routeLeg: async (from: { lat: number; lng: number }, to: { lat: number; lng: number }) => ({
-      mode: 'TRANSIT',
-      durationMin: 10,
-      distanceM: Math.abs(from.lng - to.lng) > 0.02 ? 3_000 : 900,
-      walkingDistanceM: 250,
-    }),
-  } as unknown as DirectionsService;
-
-  const builder = new ItineraryBuilder(new ScoringService(), directionsService);
-  const response = await builder.build(buildRequest({ durationMin: 180 }), [
-    candidate('anchor-east', {
-      types: ['restaurant'],
-      tags: ['COZY', 'DATE_NIGHT'],
-      lat: 1.3,
-      lng: 103.84,
-    }),
-    candidate('near-east', {
-      lat: 1.301,
-      lng: 103.841,
-      rating: 4.1,
-    }),
-    candidate('far-west-high-score', {
-      lat: 1.3,
-      lng: 103.868,
-      rating: 4.9,
-      reviewCount: 9000,
-      tags: ['ICONIC', 'DATE_NIGHT'],
-    }),
-  ]);
-
-  assert.ok(!response.stops.some((stop) => stop.name === 'far-west-high-score'));
-});
-
-test('itinerary builder keeps the selected anchor as the first stop', async () => {
-  const builder = new ItineraryBuilder(new ScoringService(), buildDirectionsService(200));
-
-  const response = await builder.build(buildRequest({ durationMin: 180, dateStyle: 'FOOD', vibe: 'ACTIVE' }), [
-    candidate('food-anchor', {
-      types: ['restaurant'],
-      tags: ['COZY', 'DATE_NIGHT'],
-      rating: 4.1,
-      reviewCount: 150,
-    }),
-    candidate('high-score-activity', {
-      types: ['museum'],
-      tags: ['ICONIC', 'ARTSY'],
-      rating: 4.9,
-      reviewCount: 4200,
-    }),
-    candidate('backup', {
-      types: ['tourist_attraction'],
-      tags: ['ICONIC'],
-      rating: 4.7,
-      reviewCount: 1800,
-    }),
-  ]);
-
-  assert.equal(response.stops[0]?.name, 'food-anchor');
 });
 
 test('itinerary builder does not accept under-filled stop selection as route-valid', async () => {

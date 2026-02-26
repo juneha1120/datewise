@@ -20,7 +20,6 @@ test('quality score prefers higher rating and review count', () => {
   const ranked = service.scoreCandidates({
     origin: { lat: 1.29027, lng: 103.851959 },
     budget: '$$',
-    dateStyle: 'FOOD',
     vibe: 'CHILL',
     candidates: [
       candidate({ externalId: 'low-quality', rating: 4.1, reviewCount: 25 }),
@@ -39,7 +38,6 @@ test('fit score penalizes farther candidates with a fixed nearby cap', () => {
   const ranked = service.scoreCandidates({
     origin: { lat: 1.29027, lng: 103.851959 },
     budget: '$$',
-    dateStyle: 'FOOD',
     vibe: 'CHILL',
     candidates: [near, far],
   });
@@ -52,7 +50,6 @@ test('style and vibe matches boost the styleVibe score', () => {
   const ranked = service.scoreCandidates({
     origin: { lat: 1.29027, lng: 103.851959 },
     budget: '$$',
-    dateStyle: 'SCENIC',
     vibe: 'ROMANTIC',
     candidates: [
       candidate({ externalId: 'match', tags: ['ROMANTIC', 'NATURE', 'DATE_NIGHT'] }),
@@ -68,7 +65,6 @@ test('avoid filters apply penalties for matching loud/crowded signals', () => {
   const ranked = service.scoreCandidates({
     origin: { lat: 1.29027, lng: 103.851959 },
     budget: '$$',
-    dateStyle: 'EVENT',
     vibe: 'ACTIVE',
     avoid: ['LOUD', 'CROWDED'],
     candidates: [
@@ -85,7 +81,6 @@ test('diversity penalty reduces score for repeated tags/types from selected cand
   const ranked = service.scoreCandidates({
     origin: { lat: 1.29027, lng: 103.851959 },
     budget: '$$',
-    dateStyle: 'ACTIVITY',
     vibe: 'ACTIVE',
     selected: [
       candidate({ externalId: 'picked-1', types: ['museum'], tags: ['ARTSY'] }),
@@ -110,7 +105,6 @@ test('diversity penalty ignores ubiquitous place types', () => {
   const ranked = service.scoreCandidates({
     origin: { lat: 1.29027, lng: 103.851959 },
     budget: '$$',
-    dateStyle: 'ACTIVITY',
     vibe: 'ACTIVE',
     selected: [
       candidate({ externalId: 'picked-1', types: ['point_of_interest', 'establishment', 'museum'] }),

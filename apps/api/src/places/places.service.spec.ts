@@ -188,7 +188,7 @@ test('details call sets Google field mask and languageCode', async () => {
   }
 });
 
-test('candidatesNearOrigin sends nearby includedTypes and text-search query fanout', async () => {
+test('candidatesNearOrigin sends nearby includedTypes without text-search fanout', async () => {
   process.env.GOOGLE_MAPS_API_KEY = 'test-token';
   const service = new PlacesService() as unknown as {
     candidatesNearOrigin: (originPlaceId: string) => Promise<unknown>;
@@ -247,7 +247,7 @@ test('candidatesNearOrigin sends nearby includedTypes and text-search query fano
     assert.ok((nearbyBody.includedTypes as unknown[]).includes('restaurant'));
 
     const textSearchCalls = calls.filter((call) => call.url.endsWith('/places:searchText'));
-    assert.ok(textSearchCalls.length >= 20);
+    assert.equal(textSearchCalls.length, 0);
   } finally {
     global.fetch = originalFetch;
   }
@@ -372,4 +372,13 @@ test('candidatesNearOrigin falls back when nearby includedTypes request is rejec
   } finally {
     global.fetch = originalFetch;
   }
+});
+
+
+test('textSearchOptionsForVibe returns curated options', () => {
+  const service = new PlacesService();
+  const options = service.textSearchOptionsForVibe('CREATIVE');
+
+  assert.ok(options.includes('pottery workshop Singapore'));
+  assert.ok(options.includes('painting class Singapore'));
 });
