@@ -1,4 +1,4 @@
-import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import {
   Candidate,
   CandidateSchema,
@@ -19,7 +19,7 @@ const GOOGLE_API_BASE = 'https://places.googleapis.com/v1';
 
 const MAX_ORIGIN_DISTANCE_M = 2_000;
 const NEARBY_SEARCH_RADIUS_M = 7_000;
-const TEXT_SEARCH_MAX_RESULTS = 3;
+const TEXT_SEARCH_PAGE_SIZE = 3;
 
 const INCLUDED_NEARBY_TYPES = [
   'restaurant',
@@ -443,6 +443,7 @@ function isSingaporeAddress(components: Array<{ shortText?: string; types: strin
 @Injectable()
 export class PlacesService {
   private readonly cache: CacheStore = new InMemoryCacheStore();
+  private readonly logger = new Logger(PlacesService.name);
 
   constructor(private readonly taggingService: TaggingService = new TaggingService()) {}
 
@@ -532,7 +533,7 @@ export class PlacesService {
       }),
     });
 
-    const textSearchResponses = await Promise.all(
+    const textSearchResponses = await Promise.allSettled(
       TEXT_SEARCH_QUERIES.map((textQuery) =>
         fetchJsonWithRetry<unknown>(`${GOOGLE_API_BASE}/places:searchText`, {
           method: 'POST',
@@ -541,7 +542,7 @@ export class PlacesService {
           ),
           body: JSON.stringify({
             textQuery,
-            maxResultCount: TEXT_SEARCH_MAX_RESULTS,
+            pageSize: TEXT_SEARCH_PAGE_SIZE,
             languageCode: 'en',
             regionCode: 'SG',
             locationBias: {
@@ -558,8 +559,19 @@ export class PlacesService {
       ),
     );
 
+    const successfulTextSearchPayloads = textSearchResponses
+      .filter((result): result is PromiseFulfilledResult<unknown> => result.status === 'fulfilled')
+      .map((result) => result.value);
+
+    const failedTextSearches = textSearchResponses.length - successfulTextSearchPayloads.length;
+    if (failedTextSearches > 0) {
+      this.logger.warn(`Text search enrichment failed for ${failedTextSearches} queries; continuing with successful candidate sources.`);
+    }
+
     const nearbyCandidates = googleNearbyToCandidates(nearbyResponse, this.taggingService);
-    const textSearchCandidates = textSearchResponses.flatMap((payload) => googleNearbyToCandidates(payload, this.taggingService));
+    const textSearchCandidates = successfulTextSearchPayloads.flatMap((payload) =>
+      googleNearbyToCandidates(payload, this.taggingService),
+    );
 
     const normalizedCandidates = mergeUniqueCandidates([...nearbyCandidates, ...textSearchCandidates]).filter((candidate) => {
       return haversineDistanceMeters(origin, { lat: candidate.lat, lng: candidate.lng }) <= MAX_ORIGIN_DISTANCE_M;
