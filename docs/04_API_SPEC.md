@@ -82,9 +82,6 @@ Behavior
 - Scoring formula:
   - `0.30*distanceScore + 0.20*qualityScore + 0.15*budgetFitScore + 0.15*openScore + 0.20*matchConfidence`
 
-## POST /v1/itineraries/replace-stop-with-text-search
-Deprecated for refined model.
-
 ## Runtime requirements
 - `GOOGLE_MAPS_API_KEY` in repo root `.env`.
 - Enabled APIs: Google Places API (New), Directions API.

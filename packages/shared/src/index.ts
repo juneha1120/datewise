@@ -199,13 +199,6 @@ export const GenerateItineraryConflictResponseSchema = z.object({
 export const GenerateItineraryResultSchema = z.union([GenerateItineraryResponseSchema, GenerateItineraryConflictResponseSchema]);
 
 
-export const ReplaceStopWithTextSearchRequestSchema = z.object({
-  originPlaceId: z.string().min(1),
-  stopIndex: z.number().int().min(0),
-  query: z.string().min(2).max(120),
-  itinerary: GenerateItineraryResponseSchema,
-});
-
 export type PlacesAutocompleteQuery = z.infer<typeof PlacesAutocompleteQuerySchema>;
 export type PlacesSuggestion = z.infer<typeof PlacesSuggestionSchema>;
 export type PlacesAutocompleteResponse = z.infer<typeof PlacesAutocompleteResponseSchema>;
@@ -235,4 +228,3 @@ export type ItineraryConflictReason = z.infer<typeof ItineraryConflictReasonSche
 export type ConflictSuggestion = z.infer<typeof ConflictSuggestionSchema>;
 export type GenerateItineraryConflictResponse = z.infer<typeof GenerateItineraryConflictResponseSchema>;
 export type GenerateItineraryResult = z.infer<typeof GenerateItineraryResultSchema>;
-export type ReplaceStopWithTextSearchRequest = z.infer<typeof ReplaceStopWithTextSearchRequestSchema>;

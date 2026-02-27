@@ -3,9 +3,6 @@ import {
   GenerateItineraryRequest,
   GenerateItineraryRequestSchema,
   GenerateItineraryResult,
-  GenerateItineraryResponse,
-  ReplaceStopWithTextSearchRequest,
-  ReplaceStopWithTextSearchRequestSchema,
 } from '@datewise/shared';
 import { ZodIssue } from 'zod';
 import { ItinerariesService } from './itineraries.service';
@@ -36,18 +33,4 @@ export class ItinerariesController {
     return this.itinerariesService.generateItinerary(request);
   }
 
-  @Post('/replace-stop-with-text-search')
-  async replaceStopWithTextSearch(@Body() body: unknown): Promise<GenerateItineraryResponse> {
-    const parsedBody = ReplaceStopWithTextSearchRequestSchema.safeParse(body);
-
-    if (!parsedBody.success) {
-      throw new BadRequestException({
-        message: 'Validation failed',
-        errors: mapValidationIssues(parsedBody.error.issues),
-      });
-    }
-
-    const request: ReplaceStopWithTextSearchRequest = parsedBody.data;
-    return this.itinerariesService.replaceStopWithTextSearch(request);
-  }
 }

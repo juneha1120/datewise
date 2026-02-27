@@ -177,10 +177,6 @@ export class ItinerariesService {
     return response;
   }
 
-  async replaceStopWithTextSearch(_request?: unknown): Promise<GenerateItineraryResponse> {
-    throw new Error('replace-stop-with-text-search is deprecated for refined itinerary model');
-  }
-
   private matchConfidence(subgroup: Subgroup, candidate: SlotSearchCandidate, details: PlaceVerificationDetails): number {
     const types = new Set([...(candidate.types ?? []), ...details.types].map((type) => type.toLowerCase()));
     const required = (TYPE_MAP[subgroup] ?? []).map((type) => type.toLowerCase());
