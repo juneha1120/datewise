@@ -8,6 +8,7 @@ import {
   Subgroup,
 } from '@datewise/shared';
 import { Injectable } from '@nestjs/common';
+
 import { PlaceVerificationDetails, PlacesService, SlotSearchCandidate } from '../places/places.service';
 import { DirectionsService } from './directions.service';
 import { ScoringService } from './scoring.service';
@@ -27,6 +28,13 @@ const FORBIDDEN_EAT_PRIMARY_TYPES = new Set(['shopping_mall', 'department_store'
 const EAT_NAME_BLOCKLIST = [' mall ', ' plaza ', ' centre ', ' center '];
 
 type SlotPick = { subgroup: Subgroup; place: SlotSearchCandidate; matchConfidence: number; openState: 'OPEN' | 'UNKNOWN' | 'CLOSED'; score: number };
+
+type ReplaceStopWithTextSearchRequest = {
+  originPlaceId: string;
+  stopIndex: number;
+  query: string;
+  itinerary: GenerateItineraryResponse;
+};
 
 const TYPE_MAP: Partial<Record<Subgroup, readonly string[]>> = {
   COFFEE: ['cafe'], DESSERT: ['bakery'], COCKTAIL: ['bar'], WINE: ['bar'], BEER: ['bar'], SPIRIT: ['bar'],
@@ -51,6 +59,19 @@ export class ItinerariesService {
     private readonly directionsService: DirectionsService,
     private readonly scoringService: ScoringService,
   ) {}
+  
+  async replaceStopWithTextSearch(request: ReplaceStopWithTextSearchRequest): Promise<GenerateItineraryResponse> {
+    const warnings = [...(request.itinerary.meta.warnings ?? [])];
+    warnings.push(`replace-stop is deprecated; received query "${request.query}" for stop ${request.stopIndex}. Returning itinerary unchanged.`);
+
+    return {
+      ...request.itinerary,
+      meta: {
+        ...request.itinerary.meta,
+        warnings,
+      },
+    };
+  }
 
   async generateItinerary(request: GenerateItineraryRequest): Promise<GenerateItineraryResult> {
     const origin = await this.placesService.details(request.origin.placeId);

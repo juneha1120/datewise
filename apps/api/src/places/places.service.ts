@@ -141,6 +141,54 @@ const GoogleNearbySearchResponseSchema = z.object({
     .default([]),
 });
 
+const GoogleSubgroupSearchResponseSchema = z.object({
+  places: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        displayName: z.object({ text: z.string().min(1) }).optional(),
+        formattedAddress: z.string().optional(),
+        location: z.object({ latitude: z.number(), longitude: z.number() }).optional(),
+        rating: z.number().optional(),
+        userRatingCount: z.number().int().optional(),
+        priceLevel: z
+          .enum([
+            'PRICE_LEVEL_FREE',
+            'PRICE_LEVEL_INEXPENSIVE',
+            'PRICE_LEVEL_MODERATE',
+            'PRICE_LEVEL_EXPENSIVE',
+            'PRICE_LEVEL_VERY_EXPENSIVE',
+          ])
+          .optional(),
+        types: z.array(z.string()).default([]),
+        primaryType: z.string().optional(),
+        editorialSummary: z.object({ text: z.string().min(1) }).optional(),
+        addressComponents: z.array(z.object({ shortText: z.string().optional(), types: z.array(z.string()).default([]) })).default([]),
+      }),
+    )
+    .default([]),
+});
+
+const GooglePlaceVerificationSchema = z.object({
+  id: z.string().min(1),
+  displayName: z.object({ text: z.string().min(1) }).optional(),
+  types: z.array(z.string()).default([]),
+  primaryType: z.string().optional(),
+  editorialSummary: z.object({ text: z.string().min(1) }).optional(),
+  regularOpeningHours: z
+    .object({
+      periods: z
+        .array(
+          z.object({
+            open: z.object({ day: z.number().int().min(0).max(6), hour: z.number().int().min(0).max(23), minute: z.number().int().min(0).max(59) }),
+            close: z.object({ day: z.number().int().min(0).max(6), hour: z.number().int().min(0).max(23), minute: z.number().int().min(0).max(59) }).optional(),
+          }),
+        )
+        .optional(),
+    })
+    .optional(),
+});
+
 
 export type SlotSearchCandidate = Candidate & {
   primaryType?: string;
@@ -515,6 +563,20 @@ export class PlacesService {
     requiredTypes?: readonly string[];
     textQuery?: string;
   }): Promise<SlotSearchCandidate[]> {
+    const cacheKey = [
+      'subgroup',
+      input.subgroup,
+      input.maxLegKm.toFixed(2),
+      input.origin.lat.toFixed(5),
+      input.origin.lng.toFixed(5),
+      (input.requiredTypes ?? []).join(','),
+      input.textQuery ?? '',
+    ].join(':');
+    const cached = this.cache.get<SlotSearchCandidate[]>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     const radiusM = Math.round(input.maxLegKm * 1000);
     const body = input.textQuery
       ? {
@@ -539,29 +601,19 @@ export class PlacesService {
       body: JSON.stringify(body),
     });
 
-    const parsed = z
-      .object({
-        places: z
-          .array(
-            z.object({
-              id: z.string().min(1),
-              displayName: z.object({ text: z.string().min(1) }).optional(),
-              formattedAddress: z.string().optional(),
-              location: z.object({ latitude: z.number(), longitude: z.number() }).optional(),
-              rating: z.number().optional(),
-              userRatingCount: z.number().int().optional(),
-              priceLevel: z.enum(['PRICE_LEVEL_FREE', 'PRICE_LEVEL_INEXPENSIVE', 'PRICE_LEVEL_MODERATE', 'PRICE_LEVEL_EXPENSIVE', 'PRICE_LEVEL_VERY_EXPENSIVE']).optional(),
-              types: z.array(z.string()).default([]),
-              primaryType: z.string().optional(),
-              editorialSummary: z.object({ text: z.string().min(1) }).optional(),
-              addressComponents: z.array(z.object({ shortText: z.string().optional(), types: z.array(z.string()).default([]) })).default([]),
-            }),
-          )
-          .default([]),
-      })
-      .parse(payload);
+    const parsed = GoogleSubgroupSearchResponseSchema.safeParse(payload);
+    if (!parsed.success) {
+      throw new HttpException(
+        {
+          code: 'INVALID_EXTERNAL_RESPONSE',
+          message: 'Invalid subgroup search response from Google Places.',
+          details: parsed.error.flatten(),
+        },
+        HttpStatus.BAD_GATEWAY,
+      );
+    }
 
-    return parsed.places
+    const normalized = parsed.data.places
       .filter((place) => place.location)
       .filter((place) => isSingaporeAddress(place.addressComponents))
       .map((place) => ({
@@ -578,6 +630,9 @@ export class PlacesService {
         primaryType: place.primaryType,
         editorialSummary: place.editorialSummary?.text,
       }));
+
+    this.cache.set(cacheKey, normalized, 2 * 60_000);
+    return normalized;
   }
 
   async placeVerificationDetails(placeId: string): Promise<PlaceVerificationDetails> {
@@ -591,33 +646,25 @@ export class PlacesService {
       headers: this.buildJsonHeaders('id,displayName.text,types,primaryType,editorialSummary.text,regularOpeningHours.periods.open.day,regularOpeningHours.periods.open.hour,regularOpeningHours.periods.open.minute,regularOpeningHours.periods.close.day,regularOpeningHours.periods.close.hour,regularOpeningHours.periods.close.minute'),
     });
 
-    const parsed = z.object({
-      id: z.string().min(1),
-      displayName: z.object({ text: z.string().min(1) }).optional(),
-      types: z.array(z.string()).default([]),
-      primaryType: z.string().optional(),
-      editorialSummary: z.object({ text: z.string().min(1) }).optional(),
-      regularOpeningHours: z
-        .object({
-          periods: z
-            .array(
-              z.object({
-                open: z.object({ day: z.number().int().min(0).max(6), hour: z.number().int().min(0).max(23), minute: z.number().int().min(0).max(59) }),
-                close: z.object({ day: z.number().int().min(0).max(6), hour: z.number().int().min(0).max(23), minute: z.number().int().min(0).max(59) }).optional(),
-              }),
-            )
-            .optional(),
-        })
-        .optional(),
-    }).parse(payload);
+    const parsed = GooglePlaceVerificationSchema.safeParse(payload);
+    if (!parsed.success) {
+      throw new HttpException(
+        {
+          code: 'INVALID_EXTERNAL_RESPONSE',
+          message: 'Invalid place verification response from Google Places.',
+          details: parsed.error.flatten(),
+        },
+        HttpStatus.BAD_GATEWAY,
+      );
+    }
 
     const normalized: PlaceVerificationDetails = {
-      placeId: parsed.id,
-      primaryType: parsed.primaryType,
-      types: parsed.types,
-      name: parsed.displayName?.text ?? '',
-      editorialSummary: parsed.editorialSummary?.text,
-      regularOpeningPeriods: parsed.regularOpeningHours?.periods,
+      placeId: parsed.data.id,
+      primaryType: parsed.data.primaryType,
+      types: parsed.data.types,
+      name: parsed.data.displayName?.text ?? '',
+      editorialSummary: parsed.data.editorialSummary?.text,
+      regularOpeningPeriods: parsed.data.regularOpeningHours?.periods,
     };
 
     this.cache.set(cacheKey, normalized, 5 * 60_000);

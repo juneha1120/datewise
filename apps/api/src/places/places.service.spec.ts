@@ -253,6 +253,104 @@ test('candidatesNearOrigin sends nearby includedTypes without text-search fanout
   }
 });
 
+test('searchForSubgroup caches Google responses for repeated requests', async () => {
+  process.env.GOOGLE_MAPS_API_KEY = 'test-token';
+  const service = new PlacesService() as unknown as {
+    searchForSubgroup: (input: {
+      origin: { lat: number; lng: number };
+      subgroup: string;
+      maxLegKm: number;
+      requiredTypes?: readonly string[];
+      textQuery?: string;
+    }) => Promise<unknown>;
+  };
+
+  const originalFetch = global.fetch;
+  let searchCalls = 0;
+  global.fetch = (async (input: URL | RequestInfo) => {
+    const url = String(input);
+    if (url.endsWith('/places:searchNearby')) {
+      searchCalls += 1;
+    }
+
+    return new Response(
+      JSON.stringify({
+        places: [
+          {
+            id: 'cached-1',
+            displayName: { text: 'Cached Place' },
+            formattedAddress: 'Singapore',
+            location: { latitude: 1.3, longitude: 103.8 },
+            types: ['cafe'],
+            addressComponents: [{ shortText: 'SG', types: ['country'] }],
+          },
+        ],
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    );
+  }) as typeof fetch;
+
+  try {
+    const input = { origin: { lat: 1.3, lng: 103.8 }, subgroup: 'COFFEE', maxLegKm: 2, requiredTypes: ['cafe'] };
+    await service.searchForSubgroup(input);
+    await service.searchForSubgroup(input);
+    assert.equal(searchCalls, 1);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('searchForSubgroup maps malformed Google responses to BAD_GATEWAY', async () => {
+  process.env.GOOGLE_MAPS_API_KEY = 'test-token';
+  const service = new PlacesService();
+  const originalFetch = global.fetch;
+  global.fetch = (async () => new Response(JSON.stringify({ places: [{ id: 123 }] }), { status: 200, headers: { 'Content-Type': 'application/json' } })) as typeof fetch;
+
+  try {
+    await assert.rejects(
+      async () =>
+        service.searchForSubgroup({ origin: { lat: 1.3, lng: 103.8 }, subgroup: 'COFFEE', maxLegKm: 2, requiredTypes: ['cafe'] }),
+      (error: unknown) => {
+        assert.ok(error instanceof HttpException);
+        if (!(error instanceof HttpException)) {
+          return false;
+        }
+
+        assert.equal(error.getStatus(), HttpStatus.BAD_GATEWAY);
+        assert.equal((error.getResponse() as Record<string, unknown>).code, 'INVALID_EXTERNAL_RESPONSE');
+        return true;
+      },
+    );
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('placeVerificationDetails maps malformed Google responses to BAD_GATEWAY', async () => {
+  process.env.GOOGLE_MAPS_API_KEY = 'test-token';
+  const service = new PlacesService();
+  const originalFetch = global.fetch;
+  global.fetch = (async () => new Response(JSON.stringify({ id: 123 }), { status: 200, headers: { 'Content-Type': 'application/json' } })) as typeof fetch;
+
+  try {
+    await assert.rejects(
+      async () => service.placeVerificationDetails('bad-id'),
+      (error: unknown) => {
+        assert.ok(error instanceof HttpException);
+        if (!(error instanceof HttpException)) {
+          return false;
+        }
+
+        assert.equal(error.getStatus(), HttpStatus.BAD_GATEWAY);
+        assert.equal((error.getResponse() as Record<string, unknown>).code, 'INVALID_EXTERNAL_RESPONSE');
+        return true;
+      },
+    );
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 
 test('candidatesNearOrigin filters candidates beyond 2km from origin', async () => {
   process.env.GOOGLE_MAPS_API_KEY = 'test-token';
@@ -373,5 +471,3 @@ test('candidatesNearOrigin falls back when nearby includedTypes request is rejec
     global.fetch = originalFetch;
   }
 });
-
-
