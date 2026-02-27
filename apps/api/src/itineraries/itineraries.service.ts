@@ -26,9 +26,15 @@ import {
 
 const FORBIDDEN_EAT_PRIMARY_TYPES = new Set(['shopping_mall', 'department_store', 'tourist_attraction', 'lodging']);
 const EAT_NAME_BLOCKLIST = [' mall ', ' plaza ', ' centre ', ' center '];
+const LOOKAHEAD_CURRENT_LIMIT = 5;
+const LOOKAHEAD_NEXT_CANDIDATE_LIMIT = 5;
 
 type SlotPick = { subgroup: Subgroup; place: SlotSearchCandidate; matchConfidence: number; openState: 'OPEN' | 'UNKNOWN' | 'CLOSED'; score: number };
 type CandidateEvaluation = { subgroup: Subgroup; place: SlotSearchCandidate; matchConfidence: number; openState: 'OPEN' | 'UNKNOWN' | 'CLOSED'; score: number; leg: { durationMin: number; distanceM: number; mode: ItineraryLeg['mode']; walkingDistanceM: number } };
+type LookaheadNextCandidate = {
+  candidate: SlotSearchCandidate;
+  details: PlaceVerificationDetails;
+};
 
 type ReplaceStopWithTextSearchRequest = {
   originPlaceId: string;
@@ -145,6 +151,7 @@ export class ItinerariesService {
           request,
           currentSlotIndex: i,
           nowElapsedMin: elapsedMin,
+          lookaheadOrigin: nowLatLng,
           nowOptions: evaluated,
           nextOptions,
           maxLegKm: radius.maxLegKm,
@@ -245,42 +252,63 @@ export class ItinerariesService {
     request: GenerateItineraryRequest;
     currentSlotIndex: number;
     nowElapsedMin: number;
+    lookaheadOrigin: { lat: number; lng: number };
     nowOptions: CandidateEvaluation[];
     nextOptions: Subgroup[];
     maxLegKm: number;
   }): Promise<CandidateEvaluation | undefined> {
-    const { request, nowOptions, nextOptions, maxLegKm, nowElapsedMin } = input;
+    const { request, nowOptions, nextOptions, maxLegKm, nowElapsedMin, lookaheadOrigin } = input;
     if (nextOptions.length === 0) return undefined;
 
-    for (const current of nowOptions) {
+    const lookaheadCurrentOptions = nowOptions.slice(0, LOOKAHEAD_CURRENT_LIMIT);
+    const nextLookaheadCandidates = await this.buildNextLookaheadCandidates({ lookaheadOrigin, nextOptions, maxLegKm });
+    if (nextLookaheadCandidates.length === 0) return undefined;
+
+    for (const current of lookaheadCurrentOptions) {
       const afterCurrentStopMin = nowElapsedMin + current.leg.durationMin + subgroupDurationMin(current.subgroup);
       const currentPoint = { lat: current.place.lat, lng: current.place.lng };
 
-      for (const nextSubgroup of nextOptions) {
-        const nextCandidates = await this.placesService.searchForSubgroup({
-          origin: currentPoint,
-          subgroup: nextSubgroup,
-          maxLegKm,
-          requiredTypes: TYPE_MAP[nextSubgroup],
-          textQuery: TEXT_QUERY_MAP[nextSubgroup],
-        });
-
-        for (const nextCandidate of nextCandidates.slice(0, 20).slice(0, 10)) {
-          const nextLeg = await this.directionsService.routeLeg(currentPoint, { lat: nextCandidate.lat, lng: nextCandidate.lng }, request.radiusMode);
+      for (const nextOption of nextLookaheadCandidates) {
+        const nextLeg = await this.directionsService.routeLeg(currentPoint, { lat: nextOption.candidate.lat, lng: nextOption.candidate.lng }, request.radiusMode);
           if (nextLeg.distanceM > maxLegKm * 1000) continue;
 
-          const nextArrival = addMinutes(request.startTime, afterCurrentStopMin + nextLeg.durationMin);
-          const details = await this.placesService.placeVerificationDetails(nextCandidate.externalId);
-          if (this.matchConfidence(nextSubgroup, nextCandidate, details) < 0.6) continue;
-
-          if (openScoreFromState(isOpenAtDateTime(details.regularOpeningPeriods, request.date, nextArrival)) > 0) {
-            return current;
-          }
+        const nextArrival = addMinutes(request.startTime, afterCurrentStopMin + nextLeg.durationMin);
+        const nextOpenScore = openScoreFromState(isOpenAtDateTime(nextOption.details.regularOpeningPeriods, request.date, nextArrival));
+        if (nextOpenScore > 0) {
+          return current;
         }
       }
     }
 
     return undefined;
+  }
+
+  private async buildNextLookaheadCandidates(input: {
+    lookaheadOrigin: { lat: number; lng: number };
+    nextOptions: Subgroup[];
+    maxLegKm: number;
+  }): Promise<LookaheadNextCandidate[]> {
+    const { lookaheadOrigin, nextOptions, maxLegKm } = input;
+    const nextCandidates: LookaheadNextCandidate[] = [];
+
+    for (const nextSubgroup of nextOptions) {
+      const rawCandidates = await this.placesService.searchForSubgroup({
+        origin: lookaheadOrigin,
+        subgroup: nextSubgroup,
+        maxLegKm,
+        requiredTypes: TYPE_MAP[nextSubgroup],
+        textQuery: TEXT_QUERY_MAP[nextSubgroup],
+      });
+
+      for (const candidate of rawCandidates.slice(0, LOOKAHEAD_NEXT_CANDIDATE_LIMIT)) {
+        const details = await this.placesService.placeVerificationDetails(candidate.externalId);
+        if (this.matchConfidence(nextSubgroup, candidate, details) < 0.6) continue;
+
+        nextCandidates.push({ candidate, details });
+      }
+    }
+
+    return nextCandidates;
   }
 
   private conflict(
