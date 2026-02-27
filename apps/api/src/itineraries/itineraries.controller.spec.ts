@@ -40,3 +40,40 @@ test('generate throws BadRequestException with mapped errors for invalid payload
     },
   );
 });
+
+test('replace-stop returns itinerary response for valid payload', async () => {
+  const service = {
+    replaceStopWithTextSearch: async (input: { itinerary: { itineraryId: string } }) => ({
+      status: 'OK',
+      itineraryId: input.itinerary.itineraryId,
+      stops: [],
+      legs: [],
+      totals: { durationMin: 180, walkingDistanceM: 0 },
+      meta: { usedCache: false, warnings: ['deprecated'] },
+    }),
+  } as unknown as ItinerariesService;
+
+  const controller = new ItinerariesController(service);
+  const response = await controller.replaceStopWithTextSearch({
+    originPlaceId: 'origin',
+    stopIndex: 0,
+    query: 'coffee',
+    itinerary: { status: 'OK', itineraryId: 'iti_test', stops: [], legs: [], totals: { durationMin: 180, walkingDistanceM: 0 }, meta: { usedCache: false, warnings: [] } },
+  });
+
+  assert.equal(response.status, 'OK');
+  assert.equal(response.itineraryId, 'iti_test');
+});
+
+test('replace-stop throws BadRequestException with mapped errors for invalid payload', async () => {
+  const service = { replaceStopWithTextSearch: async () => ({ status: 'OK', itineraryId: 'x', stops: [], legs: [], totals: { durationMin: 60, walkingDistanceM: 0 }, meta: { usedCache: false, warnings: [] } }) } as unknown as ItinerariesService;
+  const controller = new ItinerariesController(service);
+
+  await assert.rejects(
+    async () => controller.replaceStopWithTextSearch({ stopIndex: -1 }),
+    (error: unknown) => {
+      assert.ok(error instanceof BadRequestException);
+      return true;
+    },
+  );
+});

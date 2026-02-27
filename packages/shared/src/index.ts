@@ -1,15 +1,5 @@
 import { z } from 'zod';
 
-export const VibeSchema = z.enum(['chill', 'active', 'romantic', 'adventurous']);
-
-export const PlanRequestSchema = z.object({
-  startArea: z.string().min(1),
-  startTimeIso: z.string().datetime(),
-  endTimeIso: z.string().datetime(),
-  budgetSgd: z.number().int().positive(),
-  vibe: VibeSchema,
-});
-
 export const PlacesAutocompleteQuerySchema = z.object({
   q: z.string().min(2).max(120),
 });
@@ -41,23 +31,6 @@ const DateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/u, 'Invalid date format
 const TimeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/u, 'Invalid time format. Use HH:mm.');
 
 export const BudgetSchema = z.enum(['$', '$$', '$$$']);
-export const DateStyleOptionSchema = z.enum(['FOOD', 'ACTIVITY', 'EVENT', 'SCENIC', 'SURPRISE']);
-export const VibeOptionSchema = z.enum(['CHILL', 'ROMANTIC', 'CREATIVE', 'PLAYFUL', 'ACTIVE', 'LUXE']);
-export const FoodPreferenceSchema = z.enum(['VEG', 'HALAL_FRIENDLY', 'NO_ALCOHOL', 'NO_SEAFOOD']);
-export const AvoidPreferenceSchema = z.enum(['OUTDOOR', 'PHYSICAL', 'CROWDED', 'LOUD']);
-export const TransportSchema = z.enum(['MIN_WALK', 'TRANSIT', 'DRIVE_OK', 'WALK_OK']);
-export const TagSchema = z.enum([
-  'ARTSY',
-  'BUDGET_FRIENDLY',
-  'COZY',
-  'CROWDED',
-  'DATE_NIGHT',
-  'ICONIC',
-  'LOUD',
-  'NATURE',
-  'PREMIUM',
-  'ROMANTIC',
-]);
 
 export const GenerateItineraryOriginSchema = PlaceDetailsResponseSchema;
 
@@ -129,7 +102,7 @@ export const CandidateSchema = z.object({
   reviewCount: z.number().int().min(0).optional(),
   priceLevel: z.number().int().min(0).max(4).optional(),
   types: z.array(z.string().min(1)).optional(),
-  tags: z.array(TagSchema).optional(),
+  tags: z.array(z.string().min(1)).optional(),
   booking: BookingSignalSchema.optional(),
 });
 
@@ -206,6 +179,28 @@ export const ItineraryConflictReasonSchema = z.enum([
   'CLOSED_AT_TIME',
   'INSUFFICIENT_TIME_FOR_TRAVEL',
 ]);
+<<<<<<< HEAD
+=======
+
+export const ConflictSuggestionSchema = z.object({
+  type: z.enum(['UPGRADE_RADIUS_MODE', 'SUBSTITUTE_SUBGROUP', 'RECENTER_AROUND_SLOT']),
+  message: z.string().min(1),
+  slotIndex: z.number().int().min(0).optional(),
+  fromSubgroup: SubgroupSchema.optional(),
+  toSubgroups: z.array(SubgroupSchema).optional(),
+  recommendedRadiusMode: RadiusModeSchema.optional(),
+});
+
+export const GenerateItineraryConflictResponseSchema = z.object({
+  status: z.literal('CONFLICT'),
+  reason: ItineraryConflictReasonSchema,
+  message: z.string().min(1),
+  suggestions: z.array(ConflictSuggestionSchema),
+});
+
+export const GenerateItineraryResultSchema = z.union([GenerateItineraryResponseSchema, GenerateItineraryConflictResponseSchema]);
+
+>>>>>>> main
 
 export const ConflictSuggestionSchema = z.object({
   type: z.enum(['UPGRADE_RADIUS_MODE', 'SUBSTITUTE_SUBGROUP', 'RECENTER_AROUND_SLOT']),
@@ -226,27 +221,12 @@ export const GenerateItineraryConflictResponseSchema = z.object({
 export const GenerateItineraryResultSchema = z.union([GenerateItineraryResponseSchema, GenerateItineraryConflictResponseSchema]);
 
 
-export const ReplaceStopWithTextSearchRequestSchema = z.object({
-  originPlaceId: z.string().min(1),
-  stopIndex: z.number().int().min(0),
-  query: z.string().min(2).max(120),
-  itinerary: GenerateItineraryResponseSchema,
-});
-
-export type Vibe = z.infer<typeof VibeSchema>;
-export type PlanRequest = z.infer<typeof PlanRequestSchema>;
 export type PlacesAutocompleteQuery = z.infer<typeof PlacesAutocompleteQuerySchema>;
 export type PlacesSuggestion = z.infer<typeof PlacesSuggestionSchema>;
 export type PlacesAutocompleteResponse = z.infer<typeof PlacesAutocompleteResponseSchema>;
 export type PlaceDetailsQuery = z.infer<typeof PlaceDetailsQuerySchema>;
 export type PlaceDetailsResponse = z.infer<typeof PlaceDetailsResponseSchema>;
 export type Budget = z.infer<typeof BudgetSchema>;
-export type DateStyleOption = z.infer<typeof DateStyleOptionSchema>;
-export type VibeOption = z.infer<typeof VibeOptionSchema>;
-export type FoodPreference = z.infer<typeof FoodPreferenceSchema>;
-export type AvoidPreference = z.infer<typeof AvoidPreferenceSchema>;
-export type Transport = z.infer<typeof TransportSchema>;
-export type Tag = z.infer<typeof TagSchema>;
 export type GenerateItineraryOrigin = z.infer<typeof GenerateItineraryOriginSchema>;
 export type CoreGroup = z.infer<typeof CoreGroupSchema>;
 export type EatSubgroup = z.infer<typeof EatSubgroupSchema>;
@@ -270,4 +250,7 @@ export type ItineraryConflictReason = z.infer<typeof ItineraryConflictReasonSche
 export type ConflictSuggestion = z.infer<typeof ConflictSuggestionSchema>;
 export type GenerateItineraryConflictResponse = z.infer<typeof GenerateItineraryConflictResponseSchema>;
 export type GenerateItineraryResult = z.infer<typeof GenerateItineraryResultSchema>;
+<<<<<<< HEAD
+=======
 export type ReplaceStopWithTextSearchRequest = z.infer<typeof ReplaceStopWithTextSearchRequestSchema>;
+>>>>>>> main

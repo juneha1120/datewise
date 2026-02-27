@@ -7,14 +7,12 @@ import {
   PlaceDetailsResponse,
   PlaceDetailsResponseSchema,
   PlacesAutocompleteResponse,
-  PlacesAutocompleteResponseSchema,
-  VibeOption,
+  PlacesAutocompleteResponseSchema
 } from '@datewise/shared';
 import { z } from 'zod';
 import { OpeningPeriod } from '../itineraries/planner';
 import { CacheStore, InMemoryCacheStore } from './cache';
 import { fetchJsonWithRetry } from './http';
-import { TaggingService } from './tagging.service';
 
 const SINGAPORE_COUNTRY_CODE = 'SG';
 const GOOGLE_API_BASE = 'https://places.googleapis.com/v1';
@@ -43,15 +41,6 @@ const INCLUDED_NEARBY_TYPES = [
   'clothing_store',
   'store',
 ] as const;
-
-const VIBE_TEXT_SEARCH_QUERY_MAP: Readonly<Record<VibeOption, readonly string[]>> = {
-  CHILL: ['aesthetic cafe Singapore', 'dessert cafe Singapore', 'hidden cafe Singapore', 'wine bar Singapore'],
-  ROMANTIC: ['rooftop bar Singapore', 'romantic restaurant Singapore', 'skyline view Singapore', 'river walk Singapore'],
-  CREATIVE: ['pottery workshop Singapore', 'art workshop Singapore', 'painting class Singapore', 'perfume workshop Singapore'],
-  PLAYFUL: ['escape room Singapore', 'board game cafe Singapore', 'arcade Singapore', 'mini golf Singapore'],
-  ACTIVE: ['cycling park Singapore', 'hiking trail Singapore', 'nature trail Singapore', 'kayaking Singapore'],
-  LUXE: ['fine dining restaurant Singapore', 'rooftop bar Singapore', 'spa Singapore', 'speakeasy Singapore'],
-};
 
 const BOOKING_KEYWORDS = [
   'reservation',
@@ -150,6 +139,54 @@ const GoogleNearbySearchResponseSchema = z.object({
       }),
     )
     .default([]),
+});
+
+const GoogleSubgroupSearchResponseSchema = z.object({
+  places: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        displayName: z.object({ text: z.string().min(1) }).optional(),
+        formattedAddress: z.string().optional(),
+        location: z.object({ latitude: z.number(), longitude: z.number() }).optional(),
+        rating: z.number().optional(),
+        userRatingCount: z.number().int().optional(),
+        priceLevel: z
+          .enum([
+            'PRICE_LEVEL_FREE',
+            'PRICE_LEVEL_INEXPENSIVE',
+            'PRICE_LEVEL_MODERATE',
+            'PRICE_LEVEL_EXPENSIVE',
+            'PRICE_LEVEL_VERY_EXPENSIVE',
+          ])
+          .optional(),
+        types: z.array(z.string()).default([]),
+        primaryType: z.string().optional(),
+        editorialSummary: z.object({ text: z.string().min(1) }).optional(),
+        addressComponents: z.array(z.object({ shortText: z.string().optional(), types: z.array(z.string()).default([]) })).default([]),
+      }),
+    )
+    .default([]),
+});
+
+const GooglePlaceVerificationSchema = z.object({
+  id: z.string().min(1),
+  displayName: z.object({ text: z.string().min(1) }).optional(),
+  types: z.array(z.string()).default([]),
+  primaryType: z.string().optional(),
+  editorialSummary: z.object({ text: z.string().min(1) }).optional(),
+  regularOpeningHours: z
+    .object({
+      periods: z
+        .array(
+          z.object({
+            open: z.object({ day: z.number().int().min(0).max(6), hour: z.number().int().min(0).max(23), minute: z.number().int().min(0).max(59) }),
+            close: z.object({ day: z.number().int().min(0).max(6), hour: z.number().int().min(0).max(23), minute: z.number().int().min(0).max(59) }).optional(),
+          }),
+        )
+        .optional(),
+    })
+    .optional(),
 });
 
 
@@ -282,11 +319,8 @@ export function googleDetailsToResponse(payload: unknown): PlaceDetailsResponse 
   return normalized.data;
 }
 
-/** Converts nearby results into scored candidates with deterministic tag inference. */
-export function googleNearbyToCandidates(
-  payload: unknown,
-  taggingService: TaggingService = new TaggingService(),
-): Candidate[] {
+/** Converts nearby results into normalized candidates. */
+export function googleNearbyToCandidates(payload: unknown): Candidate[] {
   const parsed = GoogleNearbySearchResponseSchema.safeParse(payload);
   if (!parsed.success) {
     throw new HttpException(
@@ -308,11 +342,6 @@ export function googleNearbyToCandidates(
       const snippets = place.reviews
         .map((review) => review.text?.text ?? '')
         .filter((snippet) => snippet.length > 0);
-      const tags = taggingService.inferTags({
-        types,
-        priceLevel,
-        snippets,
-      });
       const booking = inferBookingSignal({
         types,
         priceLevel,
@@ -332,7 +361,6 @@ export function googleNearbyToCandidates(
         reviewCount: place.userRatingCount,
         priceLevel,
         types,
-        tags,
         booking,
       });
     });
@@ -441,12 +469,6 @@ export class PlacesService {
   private readonly cache: CacheStore = new InMemoryCacheStore();
   private readonly logger = new Logger(PlacesService.name);
 
-  constructor(private readonly taggingService: TaggingService = new TaggingService()) {}
-
-  textSearchOptionsForVibe(vibe: VibeOption): string[] {
-    return [...(VIBE_TEXT_SEARCH_QUERY_MAP[vibe] ?? [])];
-  }
-
   async searchTextCandidates(originPlaceId: string, textQuery: string): Promise<Candidate[]> {
     const origin = await this.details(originPlaceId);
     const payload = await fetchJsonWithRetry<unknown>(`${GOOGLE_API_BASE}/places:searchText`, {
@@ -471,7 +493,7 @@ export class PlacesService {
       }),
     });
 
-    return googleNearbyToCandidates(payload, this.taggingService).filter((candidate) => {
+    return googleNearbyToCandidates(payload).filter((candidate) => {
       return haversineDistanceMeters(origin, { lat: candidate.lat, lng: candidate.lng }) <= MAX_ORIGIN_DISTANCE_M;
     });
   }
@@ -541,6 +563,20 @@ export class PlacesService {
     requiredTypes?: readonly string[];
     textQuery?: string;
   }): Promise<SlotSearchCandidate[]> {
+    const cacheKey = [
+      'subgroup',
+      input.subgroup,
+      input.maxLegKm.toFixed(2),
+      input.origin.lat.toFixed(5),
+      input.origin.lng.toFixed(5),
+      (input.requiredTypes ?? []).join(','),
+      input.textQuery ?? '',
+    ].join(':');
+    const cached = this.cache.get<SlotSearchCandidate[]>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     const radiusM = Math.round(input.maxLegKm * 1000);
     const body = input.textQuery
       ? {
@@ -565,29 +601,19 @@ export class PlacesService {
       body: JSON.stringify(body),
     });
 
-    const parsed = z
-      .object({
-        places: z
-          .array(
-            z.object({
-              id: z.string().min(1),
-              displayName: z.object({ text: z.string().min(1) }).optional(),
-              formattedAddress: z.string().optional(),
-              location: z.object({ latitude: z.number(), longitude: z.number() }).optional(),
-              rating: z.number().optional(),
-              userRatingCount: z.number().int().optional(),
-              priceLevel: z.enum(['PRICE_LEVEL_FREE', 'PRICE_LEVEL_INEXPENSIVE', 'PRICE_LEVEL_MODERATE', 'PRICE_LEVEL_EXPENSIVE', 'PRICE_LEVEL_VERY_EXPENSIVE']).optional(),
-              types: z.array(z.string()).default([]),
-              primaryType: z.string().optional(),
-              editorialSummary: z.object({ text: z.string().min(1) }).optional(),
-              addressComponents: z.array(z.object({ shortText: z.string().optional(), types: z.array(z.string()).default([]) })).default([]),
-            }),
-          )
-          .default([]),
-      })
-      .parse(payload);
+    const parsed = GoogleSubgroupSearchResponseSchema.safeParse(payload);
+    if (!parsed.success) {
+      throw new HttpException(
+        {
+          code: 'INVALID_EXTERNAL_RESPONSE',
+          message: 'Invalid subgroup search response from Google Places.',
+          details: parsed.error.flatten(),
+        },
+        HttpStatus.BAD_GATEWAY,
+      );
+    }
 
-    return parsed.places
+    const normalized = parsed.data.places
       .filter((place) => place.location)
       .filter((place) => isSingaporeAddress(place.addressComponents))
       .map((place) => ({
@@ -604,6 +630,9 @@ export class PlacesService {
         primaryType: place.primaryType,
         editorialSummary: place.editorialSummary?.text,
       }));
+
+    this.cache.set(cacheKey, normalized, 2 * 60_000);
+    return normalized;
   }
 
   async placeVerificationDetails(placeId: string): Promise<PlaceVerificationDetails> {
@@ -617,33 +646,25 @@ export class PlacesService {
       headers: this.buildJsonHeaders('id,displayName.text,types,primaryType,editorialSummary.text,regularOpeningHours.periods.open.day,regularOpeningHours.periods.open.hour,regularOpeningHours.periods.open.minute,regularOpeningHours.periods.close.day,regularOpeningHours.periods.close.hour,regularOpeningHours.periods.close.minute'),
     });
 
-    const parsed = z.object({
-      id: z.string().min(1),
-      displayName: z.object({ text: z.string().min(1) }).optional(),
-      types: z.array(z.string()).default([]),
-      primaryType: z.string().optional(),
-      editorialSummary: z.object({ text: z.string().min(1) }).optional(),
-      regularOpeningHours: z
-        .object({
-          periods: z
-            .array(
-              z.object({
-                open: z.object({ day: z.number().int().min(0).max(6), hour: z.number().int().min(0).max(23), minute: z.number().int().min(0).max(59) }),
-                close: z.object({ day: z.number().int().min(0).max(6), hour: z.number().int().min(0).max(23), minute: z.number().int().min(0).max(59) }).optional(),
-              }),
-            )
-            .optional(),
-        })
-        .optional(),
-    }).parse(payload);
+    const parsed = GooglePlaceVerificationSchema.safeParse(payload);
+    if (!parsed.success) {
+      throw new HttpException(
+        {
+          code: 'INVALID_EXTERNAL_RESPONSE',
+          message: 'Invalid place verification response from Google Places.',
+          details: parsed.error.flatten(),
+        },
+        HttpStatus.BAD_GATEWAY,
+      );
+    }
 
     const normalized: PlaceVerificationDetails = {
-      placeId: parsed.id,
-      primaryType: parsed.primaryType,
-      types: parsed.types,
-      name: parsed.displayName?.text ?? '',
-      editorialSummary: parsed.editorialSummary?.text,
-      regularOpeningPeriods: parsed.regularOpeningHours?.periods,
+      placeId: parsed.data.id,
+      primaryType: parsed.data.primaryType,
+      types: parsed.data.types,
+      name: parsed.data.displayName?.text ?? '',
+      editorialSummary: parsed.data.editorialSummary?.text,
+      regularOpeningPeriods: parsed.data.regularOpeningHours?.periods,
     };
 
     this.cache.set(cacheKey, normalized, 5 * 60_000);
@@ -666,7 +687,7 @@ export class PlacesService {
       nearbyResponse = await this.searchNearbyRaw(origin, false);
     }
 
-    const nearbyCandidates = googleNearbyToCandidates(nearbyResponse, this.taggingService);
+    const nearbyCandidates = googleNearbyToCandidates(nearbyResponse);
 
     const normalizedCandidates = mergeUniqueCandidates(nearbyCandidates).filter((candidate) => {
       return haversineDistanceMeters(origin, { lat: candidate.lat, lng: candidate.lng }) <= MAX_ORIGIN_DISTANCE_M;

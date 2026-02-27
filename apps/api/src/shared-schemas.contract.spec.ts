@@ -17,8 +17,9 @@ test('shared schemas reject invalid itinerary payload', () => {
     date: '2026/01/01',
     startTime: '18:30',
     durationMin: 180,
-    budget: '$$',
-    vibe: 'ROMANTIC',
+    budgetLevel: 2,
+    radiusMode: 'WALKABLE',
+    sequence: [{ type: 'CORE', core: 'EAT' }, { type: 'SUBGROUP', subgroup: 'COFFEE' }],
   });
 
   assert.equal(parsed.success, false);
