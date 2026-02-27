@@ -151,6 +151,21 @@ const GoogleNearbySearchResponseSchema = z.object({
     .default([]),
 });
 
+
+export type SlotSearchCandidate = Candidate & {
+  primaryType?: string;
+  editorialSummary?: string;
+};
+
+export type PlaceVerificationDetails = {
+  placeId: string;
+  primaryType?: string;
+  types: string[];
+  name: string;
+  editorialSummary?: string;
+  openingState: 'OPEN' | 'UNKNOWN' | 'CLOSED';
+};
+
 const priceLevelMap: Record<string, number> = {
   PRICE_LEVEL_FREE: 0,
   PRICE_LEVEL_INEXPENSIVE: 1,
@@ -515,6 +530,104 @@ export class PlacesService {
     const normalized = googleDetailsToResponse(response);
     this.cache.set(cacheKey, normalized, 5 * 60_000);
     return normalized;
+  }
+
+
+  async searchForSubgroup(input: {
+    origin: { lat: number; lng: number };
+    subgroup: string;
+    maxLegKm: number;
+    requiredTypes?: readonly string[];
+    textQuery?: string;
+  }): Promise<SlotSearchCandidate[]> {
+    const radiusM = Math.round(input.maxLegKm * 1000);
+    const body = input.textQuery
+      ? {
+          textQuery: `${input.textQuery} Singapore`,
+          pageSize: 20,
+          languageCode: 'en',
+          regionCode: 'SG',
+          locationBias: { circle: { center: { latitude: input.origin.lat, longitude: input.origin.lng }, radius: radiusM } },
+        }
+      : {
+          maxResultCount: 20,
+          rankPreference: 'POPULARITY',
+          languageCode: 'en',
+          locationRestriction: { circle: { center: { latitude: input.origin.lat, longitude: input.origin.lng }, radius: radiusM } },
+          includedTypes: input.requiredTypes ?? ['point_of_interest'],
+        };
+
+    const endpoint = input.textQuery ? 'places:searchText' : 'places:searchNearby';
+    const payload = await fetchJsonWithRetry<unknown>(`${GOOGLE_API_BASE}/${endpoint}`, {
+      method: 'POST',
+      headers: this.buildJsonHeaders('places.id,places.displayName.text,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.priceLevel,places.types,places.primaryType,places.editorialSummary.text,places.addressComponents.shortText,places.addressComponents.types'),
+      body: JSON.stringify(body),
+    });
+
+    const parsed = z
+      .object({
+        places: z
+          .array(
+            z.object({
+              id: z.string().min(1),
+              displayName: z.object({ text: z.string().min(1) }).optional(),
+              formattedAddress: z.string().optional(),
+              location: z.object({ latitude: z.number(), longitude: z.number() }).optional(),
+              rating: z.number().optional(),
+              userRatingCount: z.number().int().optional(),
+              priceLevel: z.enum(['PRICE_LEVEL_FREE', 'PRICE_LEVEL_INEXPENSIVE', 'PRICE_LEVEL_MODERATE', 'PRICE_LEVEL_EXPENSIVE', 'PRICE_LEVEL_VERY_EXPENSIVE']).optional(),
+              types: z.array(z.string()).default([]),
+              primaryType: z.string().optional(),
+              editorialSummary: z.object({ text: z.string().min(1) }).optional(),
+              addressComponents: z.array(z.object({ shortText: z.string().optional(), types: z.array(z.string()).default([]) })).default([]),
+            }),
+          )
+          .default([]),
+      })
+      .parse(payload);
+
+    return parsed.places
+      .filter((place) => place.location)
+      .filter((place) => isSingaporeAddress(place.addressComponents))
+      .map((place) => ({
+        kind: 'PLACE' as const,
+        externalId: place.id,
+        name: place.displayName?.text ?? place.formattedAddress ?? 'Unknown place',
+        lat: place.location!.latitude,
+        lng: place.location!.longitude,
+        address: place.formattedAddress,
+        rating: place.rating,
+        reviewCount: place.userRatingCount,
+        priceLevel: place.priceLevel ? priceLevelMap[place.priceLevel] : undefined,
+        types: place.types,
+        primaryType: place.primaryType,
+        editorialSummary: place.editorialSummary?.text,
+      }));
+  }
+
+  async placeVerificationDetails(placeId: string): Promise<PlaceVerificationDetails> {
+    const payload = await fetchJsonWithRetry<unknown>(`${GOOGLE_API_BASE}/places/${encodeURIComponent(placeId)}?languageCode=en`, {
+      headers: this.buildJsonHeaders('id,displayName.text,types,primaryType,editorialSummary.text,currentOpeningHours.openNow'),
+    });
+
+    const parsed = z.object({
+      id: z.string().min(1),
+      displayName: z.object({ text: z.string().min(1) }).optional(),
+      types: z.array(z.string()).default([]),
+      primaryType: z.string().optional(),
+      editorialSummary: z.object({ text: z.string().min(1) }).optional(),
+      currentOpeningHours: z.object({ openNow: z.boolean().optional() }).optional(),
+    }).parse(payload);
+
+    const openNow = parsed.currentOpeningHours?.openNow;
+    return {
+      placeId: parsed.id,
+      primaryType: parsed.primaryType,
+      types: parsed.types,
+      name: parsed.displayName?.text ?? '',
+      editorialSummary: parsed.editorialSummary?.text,
+      openingState: openNow === undefined ? 'UNKNOWN' : openNow ? 'OPEN' : 'CLOSED',
+    };
   }
 
   async candidatesNearOrigin(originPlaceId: string): Promise<DebugPlaceCandidatesResponse> {
