@@ -9,7 +9,6 @@ function validBody() {
     origin: { placeId: 'abc', name: 'Origin', formattedAddress: 'Singapore', lat: 1.3, lng: 103.8, types: ['locality'] },
     date: '2026-03-10',
     startTime: '18:30',
-    durationMin: 180,
     budgetLevel: 2,
     radiusMode: 'SHORT_TRANSIT',
     sequence: [{ type: 'CORE', core: 'EAT' }, { type: 'SUBGROUP', subgroup: 'COFFEE' }],
@@ -19,7 +18,7 @@ function validBody() {
 
 test('generate returns itinerary for valid payload', async () => {
   const service = {
-    generateItinerary: async () => ({ status: 'OK', itineraryId: 'iti_test', stops: [], legs: [], totals: { durationMin: 180, walkingDistanceM: 0 }, meta: { usedCache: false, warnings: [] } }),
+    generateItinerary: async () => ({ status: 'OK', itineraryId: 'iti_test', stops: [], legs: [], totals: { durationMin: 180, durationLabel: '3 hours', walkingDistanceM: 0 }, meta: { usedCache: false, warnings: [] } }),
   } as unknown as ItinerariesService;
 
   const controller = new ItinerariesController(service);
@@ -48,7 +47,7 @@ test('replace-stop returns itinerary response for valid payload', async () => {
       itineraryId: input.itinerary.itineraryId,
       stops: [],
       legs: [],
-      totals: { durationMin: 180, walkingDistanceM: 0 },
+      totals: { durationMin: 180, durationLabel: '3 hours', walkingDistanceM: 0 },
       meta: { usedCache: false, warnings: ['deprecated'] },
     }),
   } as unknown as ItinerariesService;
@@ -58,7 +57,7 @@ test('replace-stop returns itinerary response for valid payload', async () => {
     originPlaceId: 'origin',
     stopIndex: 0,
     query: 'coffee',
-    itinerary: { status: 'OK', itineraryId: 'iti_test', stops: [], legs: [], totals: { durationMin: 180, walkingDistanceM: 0 }, meta: { usedCache: false, warnings: [] } },
+    itinerary: { status: 'OK', itineraryId: 'iti_test', stops: [], legs: [], totals: { durationMin: 180, durationLabel: '3 hours', walkingDistanceM: 0 }, meta: { usedCache: false, warnings: [] } },
   });
 
   assert.equal(response.status, 'OK');
@@ -66,7 +65,7 @@ test('replace-stop returns itinerary response for valid payload', async () => {
 });
 
 test('replace-stop throws BadRequestException with mapped errors for invalid payload', async () => {
-  const service = { replaceStopWithTextSearch: async () => ({ status: 'OK', itineraryId: 'x', stops: [], legs: [], totals: { durationMin: 60, walkingDistanceM: 0 }, meta: { usedCache: false, warnings: [] } }) } as unknown as ItinerariesService;
+  const service = { replaceStopWithTextSearch: async () => ({ status: 'OK', itineraryId: 'x', stops: [], legs: [], totals: { durationMin: 60, durationLabel: '1 hour', walkingDistanceM: 0 }, meta: { usedCache: false, warnings: [] } }) } as unknown as ItinerariesService;
   const controller = new ItinerariesController(service);
 
   await assert.rejects(

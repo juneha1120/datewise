@@ -119,7 +119,6 @@ export const GenerateItineraryRequestSchema = z.object({
   origin: GenerateItineraryOriginSchema,
   date: DateSchema,
   startTime: TimeSchema,
-  durationMin: z.number().int().min(30).max(1440),
   budgetLevel: z.union([z.literal(1), z.literal(2), z.literal(3)]),
   radiusMode: RadiusModeSchema,
   sequence: z.array(SequenceSlotSchema).min(2).max(5),
@@ -156,6 +155,7 @@ export const ItineraryLegSchema = z.object({
 
 export const ItineraryTotalsSchema = z.object({
   durationMin: z.number().int().min(1),
+  durationLabel: z.string().min(1),
   walkingDistanceM: z.number().int().min(0),
 });
 
@@ -169,6 +169,7 @@ export const GenerateItineraryResponseSchema = z.object({
     usedCache: z.boolean(),
     warnings: z.array(z.string()),
     totalTravelTimeMin: z.number().int().min(0).optional(),
+    travelTimeRatio: z.number().min(0).optional(),
   }),
 });
 

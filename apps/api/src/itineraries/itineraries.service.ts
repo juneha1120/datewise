@@ -26,8 +26,15 @@ import {
 
 const FORBIDDEN_EAT_PRIMARY_TYPES = new Set(['shopping_mall', 'department_store', 'tourist_attraction', 'lodging']);
 const EAT_NAME_BLOCKLIST = [' mall ', ' plaza ', ' centre ', ' center '];
+const LOOKAHEAD_CURRENT_LIMIT = 5;
+const LOOKAHEAD_NEXT_CANDIDATE_LIMIT = 5;
 
 type SlotPick = { subgroup: Subgroup; place: SlotSearchCandidate; matchConfidence: number; openState: 'OPEN' | 'UNKNOWN' | 'CLOSED'; score: number };
+type CandidateEvaluation = { subgroup: Subgroup; place: SlotSearchCandidate; matchConfidence: number; openState: 'OPEN' | 'UNKNOWN' | 'CLOSED'; score: number; leg: { durationMin: number; distanceM: number; mode: ItineraryLeg['mode']; walkingDistanceM: number } };
+type LookaheadNextCandidate = {
+  candidate: SlotSearchCandidate;
+  details: PlaceVerificationDetails;
+};
 
 type ReplaceStopWithTextSearchRequest = {
   originPlaceId: string;
@@ -88,9 +95,10 @@ export class ItinerariesService {
       const options = resolveSlotSubgroups(request.sequence[i], avoid);
       if (options.length === 0) return this.conflict('ALL_BLOCKED_BY_AVOID', 'Avoid list removed all candidates for slot.', request, i, undefined, avoid);
 
-      let best: SlotPick | undefined;
+      let best: CandidateEvaluation | undefined;
       let foundTooFar = false;
       let foundClosed = false;
+      const evaluated: CandidateEvaluation[] = [];
 
       for (const subgroup of options) {
         const candidates = await this.placesService.searchForSubgroup({
@@ -130,10 +138,27 @@ export class ItinerariesService {
             openScore,
             matchConfidence,
           });
+          evaluated.push({ subgroup, place: candidate, matchConfidence, openState, score, leg });
+        }
+      }
 
-          if (!best || score > best.score) {
-            best = { subgroup, place: candidate, matchConfidence, openState, score };
-          }
+      evaluated.sort((a, b) => b.score - a.score);
+      best = evaluated[0];
+
+      if (i < request.sequence.length - 1) {
+        const nextOptions = resolveSlotSubgroups(request.sequence[i + 1], avoid);
+        const feasible = await this.findFirstWithFeasibleNextStop({
+          request,
+          currentSlotIndex: i,
+          nowElapsedMin: elapsedMin,
+          lookaheadOrigin: nowLatLng,
+          nowOptions: evaluated,
+          nextOptions,
+          maxLegKm: radius.maxLegKm,
+        });
+
+        if (feasible) {
+          best = feasible;
         }
       }
 
@@ -142,19 +167,19 @@ export class ItinerariesService {
         return this.conflict(reason, 'Unable to find a feasible place for slot.', request, i, options[0], avoid);
       }
 
-      const leg = await this.directionsService.routeLeg(nowLatLng, { lat: best.place.lat, lng: best.place.lng }, request.radiusMode);
-      elapsedMin += leg.durationMin;
-      totalTravelMin += leg.durationMin;
-      walkingDistanceM += leg.walkingDistanceM;
+      elapsedMin += best.leg.durationMin;
+      totalTravelMin += best.leg.durationMin;
+      walkingDistanceM += best.leg.walkingDistanceM;
       elapsedMin += subgroupDurationMin(best.subgroup);
-      if (elapsedMin > request.durationMin) return this.conflict('INSUFFICIENT_TIME_FOR_TRAVEL', 'Travel and stops exceed total duration.', request, i, best.subgroup, avoid);
 
       picks.push(best);
       nowLatLng = { lat: best.place.lat, lng: best.place.lng };
-      if (i > 0) legs.push({ from: i - 1, to: i, mode: leg.mode, durationMin: leg.durationMin, distanceM: leg.distanceM });
+      if (i > 0) legs.push({ from: i - 1, to: i, mode: best.leg.mode, durationMin: best.leg.durationMin, distanceM: best.leg.distanceM });
     }
 
-    if (totalTravelMin > Math.floor(request.durationMin * 0.25)) {
+    const totalDurationMin = elapsedMin;
+
+    if (totalTravelMin > Math.floor(totalDurationMin * 0.25)) {
       return this.conflict('INSUFFICIENT_TIME_FOR_TRAVEL', 'Travel time would exceed 25% of total duration.', request, 0, undefined, avoid);
     }
 
@@ -191,8 +216,13 @@ export class ItinerariesService {
       itineraryId: `iti_${request.date}_${request.startTime.replace(':', '')}_${request.origin.placeId}`,
       stops,
       legs,
-      totals: { durationMin: request.durationMin, walkingDistanceM },
-      meta: { usedCache: false, warnings: [], totalTravelTimeMin: totalTravelMin },
+      totals: { durationMin: totalDurationMin, durationLabel: this.formatDuration(totalDurationMin), walkingDistanceM },
+      meta: {
+        usedCache: false,
+        warnings: [],
+        totalTravelTimeMin: totalTravelMin,
+        travelTimeRatio: totalDurationMin > 0 ? Number((totalTravelMin / totalDurationMin).toFixed(3)) : 0,
+      },
     };
 
     return response;
@@ -216,6 +246,69 @@ export class ItinerariesService {
     const keywordScore = keywords.length === 0 ? 0.5 : clamp(keywordMatches / Math.min(2, keywords.length));
 
     return clamp(requiredHit * 0.6 + keywordScore * 0.4);
+  }
+
+  private async findFirstWithFeasibleNextStop(input: {
+    request: GenerateItineraryRequest;
+    currentSlotIndex: number;
+    nowElapsedMin: number;
+    lookaheadOrigin: { lat: number; lng: number };
+    nowOptions: CandidateEvaluation[];
+    nextOptions: Subgroup[];
+    maxLegKm: number;
+  }): Promise<CandidateEvaluation | undefined> {
+    const { request, nowOptions, nextOptions, maxLegKm, nowElapsedMin, lookaheadOrigin } = input;
+    if (nextOptions.length === 0) return undefined;
+
+    const lookaheadCurrentOptions = nowOptions.slice(0, LOOKAHEAD_CURRENT_LIMIT);
+    const nextLookaheadCandidates = await this.buildNextLookaheadCandidates({ lookaheadOrigin, nextOptions, maxLegKm });
+    if (nextLookaheadCandidates.length === 0) return undefined;
+
+    for (const current of lookaheadCurrentOptions) {
+      const afterCurrentStopMin = nowElapsedMin + current.leg.durationMin + subgroupDurationMin(current.subgroup);
+      const currentPoint = { lat: current.place.lat, lng: current.place.lng };
+
+      for (const nextOption of nextLookaheadCandidates) {
+        const nextLeg = await this.directionsService.routeLeg(currentPoint, { lat: nextOption.candidate.lat, lng: nextOption.candidate.lng }, request.radiusMode);
+          if (nextLeg.distanceM > maxLegKm * 1000) continue;
+
+        const nextArrival = addMinutes(request.startTime, afterCurrentStopMin + nextLeg.durationMin);
+        const nextOpenScore = openScoreFromState(isOpenAtDateTime(nextOption.details.regularOpeningPeriods, request.date, nextArrival));
+        if (nextOpenScore > 0) {
+          return current;
+        }
+      }
+    }
+
+    return undefined;
+  }
+
+  private async buildNextLookaheadCandidates(input: {
+    lookaheadOrigin: { lat: number; lng: number };
+    nextOptions: Subgroup[];
+    maxLegKm: number;
+  }): Promise<LookaheadNextCandidate[]> {
+    const { lookaheadOrigin, nextOptions, maxLegKm } = input;
+    const nextCandidates: LookaheadNextCandidate[] = [];
+
+    for (const nextSubgroup of nextOptions) {
+      const rawCandidates = await this.placesService.searchForSubgroup({
+        origin: lookaheadOrigin,
+        subgroup: nextSubgroup,
+        maxLegKm,
+        requiredTypes: TYPE_MAP[nextSubgroup],
+        textQuery: TEXT_QUERY_MAP[nextSubgroup],
+      });
+
+      for (const candidate of rawCandidates.slice(0, LOOKAHEAD_NEXT_CANDIDATE_LIMIT)) {
+        const details = await this.placesService.placeVerificationDetails(candidate.externalId);
+        if (this.matchConfidence(nextSubgroup, candidate, details) < 0.6) continue;
+
+        nextCandidates.push({ candidate, details });
+      }
+    }
+
+    return nextCandidates;
   }
 
   private conflict(
@@ -244,5 +337,13 @@ export class ItinerariesService {
           : [{ type: 'RECENTER_AROUND_SLOT' as const, message: 'Recenter itinerary around the difficult slot.', slotIndex }]),
       ],
     };
+  }
+
+  private formatDuration(totalMin: number): string {
+    const hours = Math.floor(totalMin / 60);
+    const minutes = totalMin % 60;
+    if (hours > 0 && minutes > 0) return `${hours} hour${hours === 1 ? '' : 's'} ${minutes} min`;
+    if (hours > 0) return `${hours} hour${hours === 1 ? '' : 's'}`;
+    return `${minutes} min`;
   }
 }
