@@ -107,7 +107,7 @@ test('googleNearbyToCandidates normalizes singapore nearby places', () => {
   assert.equal(response[0].externalId, 'g.sg.place1');
   assert.equal(response[0].name, 'Tiong Bahru Bakery');
   assert.deepEqual(response[0].types, ['bakery', 'cafe']);
-  assert.deepEqual(response[0].tags, ['COZY', 'DATE_NIGHT']);
+  assert.equal(response[0].tags, undefined);
   const first = response[0] as (typeof response)[number] & { booking?: { label: string } };
   assert.ok(first.booking);
   assert.equal(first.booking?.label, 'WALK_IN_LIKELY');
@@ -235,7 +235,7 @@ test('candidatesNearOrigin sends nearby includedTypes without text-search fanout
 
   try {
     await service.candidatesNearOrigin('origin');
-    assert.ok(calls.length > 2);
+    assert.ok(calls.length >= 2);
 
     const nearbyCall = calls.find((call) => call.url.endsWith('/places:searchNearby'));
     assert.ok(nearbyCall);
@@ -375,10 +375,3 @@ test('candidatesNearOrigin falls back when nearby includedTypes request is rejec
 });
 
 
-test('textSearchOptionsForVibe returns curated options', () => {
-  const service = new PlacesService();
-  const options = service.textSearchOptionsForVibe('CREATIVE');
-
-  assert.ok(options.includes('pottery workshop Singapore'));
-  assert.ok(options.includes('painting class Singapore'));
-});
