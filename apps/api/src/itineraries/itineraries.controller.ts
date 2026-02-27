@@ -3,6 +3,7 @@ import {
   GenerateItineraryRequest,
   GenerateItineraryRequestSchema,
   GenerateItineraryResult,
+  GenerateItineraryResponse,
   ReplaceStopWithTextSearchRequest,
   ReplaceStopWithTextSearchRequestSchema,
 } from '@datewise/shared';
@@ -36,7 +37,7 @@ export class ItinerariesController {
   }
 
   @Post('/replace-stop-with-text-search')
-  async replaceStopWithTextSearch(@Body() body: unknown): Promise<unknown> {
+  async replaceStopWithTextSearch(@Body() body: unknown): Promise<GenerateItineraryResponse> {
     const parsedBody = ReplaceStopWithTextSearchRequestSchema.safeParse(body);
 
     if (!parsedBody.success) {

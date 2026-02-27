@@ -11,6 +11,7 @@ import {
   VibeOption,
 } from '@datewise/shared';
 import { z } from 'zod';
+import { OpeningPeriod } from '../itineraries/planner';
 import { CacheStore, InMemoryCacheStore } from './cache';
 import { fetchJsonWithRetry } from './http';
 import { TaggingService } from './tagging.service';
@@ -163,7 +164,7 @@ export type PlaceVerificationDetails = {
   types: string[];
   name: string;
   editorialSummary?: string;
-  openingState: 'OPEN' | 'UNKNOWN' | 'CLOSED';
+  regularOpeningPeriods?: OpeningPeriod[];
 };
 
 const priceLevelMap: Record<string, number> = {
@@ -607,7 +608,7 @@ export class PlacesService {
 
   async placeVerificationDetails(placeId: string): Promise<PlaceVerificationDetails> {
     const payload = await fetchJsonWithRetry<unknown>(`${GOOGLE_API_BASE}/places/${encodeURIComponent(placeId)}?languageCode=en`, {
-      headers: this.buildJsonHeaders('id,displayName.text,types,primaryType,editorialSummary.text,currentOpeningHours.openNow'),
+      headers: this.buildJsonHeaders('id,displayName.text,types,primaryType,editorialSummary.text,regularOpeningHours.periods.open.day,regularOpeningHours.periods.open.hour,regularOpeningHours.periods.open.minute,regularOpeningHours.periods.close.day,regularOpeningHours.periods.close.hour,regularOpeningHours.periods.close.minute'),
     });
 
     const parsed = z.object({
@@ -616,17 +617,27 @@ export class PlacesService {
       types: z.array(z.string()).default([]),
       primaryType: z.string().optional(),
       editorialSummary: z.object({ text: z.string().min(1) }).optional(),
-      currentOpeningHours: z.object({ openNow: z.boolean().optional() }).optional(),
+      regularOpeningHours: z
+        .object({
+          periods: z
+            .array(
+              z.object({
+                open: z.object({ day: z.number().int().min(0).max(6), hour: z.number().int().min(0).max(23), minute: z.number().int().min(0).max(59) }),
+                close: z.object({ day: z.number().int().min(0).max(6), hour: z.number().int().min(0).max(23), minute: z.number().int().min(0).max(59) }).optional(),
+              }),
+            )
+            .optional(),
+        })
+        .optional(),
     }).parse(payload);
 
-    const openNow = parsed.currentOpeningHours?.openNow;
     return {
       placeId: parsed.id,
       primaryType: parsed.primaryType,
       types: parsed.types,
       name: parsed.displayName?.text ?? '',
       editorialSummary: parsed.editorialSummary?.text,
-      openingState: openNow === undefined ? 'UNKNOWN' : openNow ? 'OPEN' : 'CLOSED',
+      regularOpeningPeriods: parsed.regularOpeningHours?.periods,
     };
   }
 
