@@ -12,12 +12,6 @@ Query
 Query
 - `originPlaceId`: string (required, non-empty)
 
-Behavior
-- Uses Google Places Nearby Search with curated `includedTypes` only (no text-search fanout during initial candidate generation).
-- Strictly filters candidates to within 2km of canonical origin coordinates.
-- If typed Nearby Search returns 400 (unsupported type), retries without `includedTypes`.
-- Candidate payload includes deterministic `tags` and `booking` signal (`BOOK_AHEAD`, `CHECK_AVAILABILITY`, `WALK_IN_LIKELY`).
-
 ---
 
 ## POST /v1/itineraries/generate
@@ -34,79 +28,64 @@ Request
   },
   "date": "YYYY-MM-DD",
   "startTime": "HH:mm",
-  "durationMin": 120,
-  "budget": "$|$$|$$$",
-  "vibe": "CHILL|ROMANTIC|CREATIVE|PLAYFUL|ACTIVE|LUXE",
-  "food": ["VEG","HALAL_FRIENDLY","NO_ALCOHOL","NO_SEAFOOD"],
-  "avoid": ["OUTDOOR","PHYSICAL","CROWDED","LOUD"]
+  "durationMin": 240,
+  "budgetLevel": 1,
+  "radiusMode": "WALKABLE|SHORT_TRANSIT|CAR_GRAB",
+  "sequence": [
+    { "type": "CORE", "core": "EAT" },
+    { "type": "SUBGROUP", "subgroup": "MUSEUM" }
+  ],
+  "avoid": [
+    { "type": "CORE", "core": "SIP" },
+    { "type": "SUBGROUP", "subgroup": "SHOPPING" }
+  ]
 }
 ```
 
-Response (excerpt)
+Success response
 ```json
 {
+  "status": "OK",
   "itineraryId": "string",
-  "stops": [
-    {
-      "kind": "PLACE",
-      "name": "string",
-      "lat": 1.0,
-      "lng": 103.0,
-      "address": "string",
-      "url": "string",
-      "rating": 4.6,
-      "reviewCount": 1200,
-      "priceLevel": 2,
-      "tags": ["COZY", "DATE_NIGHT"],
-      "booking": { "score": 68, "label": "CHECK_AVAILABILITY" },
-      "reason": "string"
-    }
-  ],
-  "meta": {
-    "usedCache": false,
-    "warnings": [],
-    "textSearchOptions": ["pottery workshop Singapore", "art workshop Singapore"]
-  }
+  "stops": [{ "name": "string", "core": "EAT", "subgroup": "JAPANESE", "matchConfidence": 0.82 }],
+  "legs": [{ "from": 0, "to": 1, "mode": "TRANSIT", "durationMin": 12, "distanceM": 2000 }],
+  "totals": { "durationMin": 240, "walkingDistanceM": 1200 },
+  "meta": { "usedCache": false, "warnings": [], "totalTravelTimeMin": 36 }
+}
+```
+
+Conflict response
+```json
+{
+  "status": "CONFLICT",
+  "reason": "NO_CANDIDATES_WITHIN_RADIUS|ONLY_CANDIDATES_TOO_FAR|ALL_BLOCKED_BY_AVOID|CLOSED_AT_TIME|INSUFFICIENT_TIME_FOR_TRAVEL",
+  "message": "string",
+  "suggestions": [
+    { "type": "UPGRADE_RADIUS_MODE", "recommendedRadiusMode": "SHORT_TRANSIT", "message": "Try a wider radius mode." },
+    { "type": "SUBSTITUTE_SUBGROUP", "slotIndex": 1, "fromSubgroup": "COFFEE", "toSubgroups": ["TEA_HOUSE"], "message": "Try nearby alternatives within the same core group." },
+    { "type": "RECENTER_AROUND_SLOT", "slotIndex": 1, "message": "Recenter itinerary around the difficult slot." }
+  ]
 }
 ```
 
 Behavior
-- Canonical origin is resolved from `origin.placeId` before scoring/assembly.
-- Candidate and routed-leg hard cap is 2km.
-- `booking` is displayed per stop and **does not** affect scoring.
-- Initial itinerary does not run text-search; instead `meta.textSearchOptions` is returned for optional post-generation replacement.
-
-### Vibe mapping (must-include signals + itinerary design)
-- `CHILL`: cafe/park/book_store + `COZY`/`NATURE`; combo aims for slow, low-noise flow (cafe → stroll/park → dessert).
-- `ROMANTIC`: restaurant/bar/tourist_attraction + `ROMANTIC`/`DATE_NIGHT`; combo aims for intimate meal + scenic/photo stop.
-- `CREATIVE`: art_gallery/museum/workshop-like signals + `ARTSY`; combo aims for hands-on or exhibition + cozy debrief stop.
-- `PLAYFUL`: amusement_park/bowling_alley/arcade + `ICONIC`; combo aims for active game stop + casual food/chill stop.
-- `ACTIVE`: park/natural_feature/tourist_attraction + `NATURE`; combo aims for outdoors movement + recovery stop.
-- `LUXE`: fine-dining/bar/spa-like signals + `PREMIUM`; combo aims for premium dining/lounge sequence.
-
-Tagging is derived from type + review snippets (e.g. `cozy`, `workshop`, `landmark`, `crowded`, `noisy`) and mapped to shared tags deterministically.
-
----
+- Sequence size is 2–5 slots. Each slot can be core-based or subgroup-specific.
+- Avoid list supports only core and subgroup items; core avoid blocks all child subgroups.
+- Radius mode constraints:
+  - WALKABLE: max leg 1km, walking.
+  - SHORT_TRANSIT: max leg 5km, transit with walking fallback.
+  - CAR_GRAB: max leg 15km, driving.
+- Global cap: total travel time must be <= 25% of `durationMin`, else conflict.
+- Stage A retrieval keeps up to 20 candidates.
+- Stage B verification fetches details for top 10 and applies match confidence threshold (`>= 0.6`), forbidden primary type checks, and open-hours checks.
+- Unknown opening-hours are penalized (`openScore = 0.7`); closed places are hard-rejected.
+- Scoring formula:
+  - `0.30*distanceScore + 0.20*qualityScore + 0.15*budgetFitScore + 0.15*openScore + 0.20*matchConfidence`
 
 ## POST /v1/itineraries/replace-stop-with-text-search
-Request
-```json
-{
-  "originPlaceId": "string",
-  "stopIndex": 1,
-  "query": "pottery workshop Singapore",
-  "itinerary": { "...": "Generate response payload" }
-}
-```
-
-Behavior
-- Runs Google Places Text Search for selected query (biased near origin).
-- Replaces one stop (by index) with best available result.
-- Returns updated itinerary payload with warning entry in `meta.warnings`.
-
----
+Deprecated for refined model.
 
 ## Runtime requirements
 - `GOOGLE_MAPS_API_KEY` in repo root `.env`.
-- Enabled APIs: Google Places API (New) and Directions API.
+- Enabled APIs: Google Places API (New), Directions API.
 - External API calls use timeout <= 5s and retries <= 2 with structured error mapping.

@@ -2,6 +2,7 @@ import { BadRequestException, Body, Controller, Post } from '@nestjs/common';
 import {
   GenerateItineraryRequest,
   GenerateItineraryRequestSchema,
+  GenerateItineraryResult,
   GenerateItineraryResponse,
   ReplaceStopWithTextSearchRequest,
   ReplaceStopWithTextSearchRequestSchema,
@@ -21,7 +22,7 @@ export class ItinerariesController {
   constructor(private readonly itinerariesService: ItinerariesService) {}
 
   @Post('/generate')
-  async generate(@Body() body: unknown): Promise<GenerateItineraryResponse> {
+  async generate(@Body() body: unknown): Promise<GenerateItineraryResult> {
     const parsedBody = GenerateItineraryRequestSchema.safeParse(body);
 
     if (!parsedBody.success) {

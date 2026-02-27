@@ -1,116 +1,187 @@
 import { test } from 'node:test';
 import * as assert from 'node:assert/strict';
-import { Candidate, GenerateItineraryRequest } from '@datewise/shared';
-import { PlacesService } from '../places/places.service';
-import { ItineraryBuilder } from './itinerary-builder';
+import { GenerateItineraryRequest } from '@datewise/shared';
+import { PlaceVerificationDetails, PlacesService, SlotSearchCandidate } from '../places/places.service';
 import { DirectionsService } from './directions.service';
-import { ScoringService } from './scoring.service';
 import { ItinerariesService } from './itineraries.service';
+import { avoidToSubgroups, isOpenAtDateTime, openScoreFromState, radiusConfig, similarSuggestions } from './planner';
 
-function candidate(externalId: string, overrides: Partial<Candidate> = {}): Candidate {
+function request(): GenerateItineraryRequest {
   return {
-    kind: 'PLACE',
-    externalId,
-    name: externalId,
-    lat: 1.29,
-    lng: 103.85,
-    address: 'Singapore',
-    rating: 4.5,
-    reviewCount: 300,
-    priceLevel: 2,
-    types: ['restaurant'],
-    tags: ['COZY', 'DATE_NIGHT'],
-    ...overrides,
-  };
-}
-
-function request(overrides: Partial<GenerateItineraryRequest> = {}): GenerateItineraryRequest {
-  return {
-    origin: {
-      placeId: 'abc',
-      name: 'User-provided name',
-      formattedAddress: 'User-provided address',
-      lat: 1.4,
-      lng: 103.95,
-      types: ['locality'],
-    },
+    origin: { placeId: 'origin', name: 'Origin', formattedAddress: 'Singapore', lat: 1.3, lng: 103.8, types: ['locality'] },
     date: '2026-03-10',
-    startTime: '18:30',
+    startTime: '10:30',
     durationMin: 180,
-    budget: '$$',
-    vibe: 'ROMANTIC',
-    ...overrides,
+    budgetLevel: 2,
+    radiusMode: 'SHORT_TRANSIT',
+    sequence: [{ type: 'SUBGROUP', subgroup: 'ESCAPE_ROOM' }, { type: 'CORE', core: 'EAT' }],
+    avoid: [],
   };
 }
 
-test('generateItinerary returns places-only stops from nearby candidates', async () => {
-  const mockedPlacesService = {
-    details: async () => ({
-      placeId: 'abc',
-      name: 'Tanjong Pagar MRT',
-      formattedAddress: '120 Maxwell Rd, Singapore 069119',
-      lat: 1.2764,
-      lng: 103.8458,
-      types: ['train_station'],
-    }),
-    candidatesNearOrigin: async () => ({
-      originPlaceId: 'abc',
-      candidates: [candidate('food-1'), candidate('food-2'), candidate('food-3')],
-    }),
-    textSearchOptionsForVibe: () => ['romantic restaurant Singapore'],
-  } as unknown as PlacesService;
-
-  const mockedDirectionsService = {
-    routeLeg: async () => ({
-      mode: 'TRANSIT',
-      durationMin: 10,
-      distanceM: 1_000,
-      walkingDistanceM: 400,
-    }),
-  } as unknown as DirectionsService;
-
-  const service = new ItinerariesService(mockedPlacesService, new ItineraryBuilder(new ScoringService(), mockedDirectionsService));
-
-  const itinerary = await service.generateItinerary(request());
-
-  assert.equal(itinerary.stops.length, 3);
-  assert.ok(itinerary.stops.every((stop) => stop.kind === 'PLACE'));
-  assert.ok(itinerary.stops.every((stop) => stop.reason.length > 0));
+test('avoid logic core blocks all subgroups', () => {
+  const blocked = avoidToSubgroups([{ type: 'CORE', core: 'SIP' }]);
+  assert.equal(blocked.has('COFFEE'), true);
+  assert.equal(blocked.has('SPIRIT'), true);
 });
 
-test('generateItinerary uses canonical origin details from placeId for downstream builder', async () => {
-  let capturedOriginLat = 0;
-  const mockedPlacesService = {
-    details: async () => ({
-      placeId: 'abc',
-      name: 'Canonical origin',
-      formattedAddress: 'Canonical address',
-      lat: 1.2764,
-      lng: 103.8458,
-      types: ['train_station'],
-    }),
-    candidatesNearOrigin: async () => ({
-      originPlaceId: 'abc',
-      candidates: [candidate('food-1'), candidate('food-2')],
-    }),
-    textSearchOptionsForVibe: () => ['romantic restaurant Singapore'],
+test('radius mode constraints', () => {
+  assert.deepEqual(radiusConfig('WALKABLE'), { maxLegKm: 1, legMode: 'WALK' });
+  assert.deepEqual(radiusConfig('SHORT_TRANSIT'), { maxLegKm: 5, legMode: 'TRANSIT' });
+  assert.deepEqual(radiusConfig('CAR_GRAB'), { maxLegKm: 15, legMode: 'DRIVE' });
+});
+
+test('similar suggestions exclude avoided', () => {
+  const suggestions = similarSuggestions('COFFEE', new Set(['DESSERT']));
+  assert.deepEqual(suggestions, ['TEA_HOUSE', 'BUBBLE_TEA']);
+});
+
+test('open hours unknown is penalized, not rejected', () => {
+  assert.equal(openScoreFromState('UNKNOWN'), 0.7);
+  assert.equal(openScoreFromState('OPEN'), 1);
+});
+
+test('future date open-hours evaluation uses weekly periods', () => {
+  const state = isOpenAtDateTime(
+    [
+      {
+        open: { day: 2, hour: 10, minute: 0 },
+        close: { day: 2, hour: 22, minute: 0 },
+      },
+    ],
+    '2026-03-10',
+    '09:00',
+  );
+
+  assert.equal(state, 'CLOSED');
+});
+
+test('itinerary generation rejects non-relevant text-search candidates and mall eat collisions', async () => {
+  const mockCandidates: Record<string, SlotSearchCandidate[]> = {
+    ESCAPE_ROOM: [
+      {
+        kind: 'PLACE',
+        externalId: 'bad-escape',
+        name: 'Puzzle Cafe',
+        lat: 1.3001,
+        lng: 103.8001,
+        types: ['cafe'],
+      },
+      {
+        kind: 'PLACE',
+        externalId: 'good-escape',
+        name: 'Escape Room Operator',
+        lat: 1.3002,
+        lng: 103.8002,
+        types: ['point_of_interest'],
+      },
+    ],
+    JAPANESE: [
+      {
+        kind: 'PLACE',
+        externalId: 'mall-collision',
+        name: 'Mega Mall',
+        lat: 1.3003,
+        lng: 103.8003,
+        types: ['restaurant', 'shopping_mall'],
+      },
+      {
+        kind: 'PLACE',
+        externalId: 'proper-restaurant',
+        name: 'Sushi Place',
+        lat: 1.3004,
+        lng: 103.8004,
+        types: ['restaurant'],
+      },
+    ],
+  };
+
+  const detailMap: Record<string, PlaceVerificationDetails> = {
+    'bad-escape': { placeId: 'bad-escape', name: 'Puzzle Cafe', types: ['cafe'], regularOpeningPeriods: [{ open: { day: 2, hour: 8, minute: 0 }, close: { day: 2, hour: 23, minute: 0 } }] },
+    'good-escape': { placeId: 'good-escape', name: 'Escape Room Operator', types: ['point_of_interest'], editorialSummary: 'Popular escape room in Singapore', regularOpeningPeriods: [{ open: { day: 2, hour: 10, minute: 0 }, close: { day: 2, hour: 23, minute: 0 } }] },
+    'mall-collision': { placeId: 'mall-collision', name: 'Mega Mall', primaryType: 'shopping_mall', types: ['restaurant', 'shopping_mall'], regularOpeningPeriods: [{ open: { day: 2, hour: 10, minute: 0 }, close: { day: 2, hour: 23, minute: 0 } }] },
+    'proper-restaurant': { placeId: 'proper-restaurant', name: 'Sushi Place', primaryType: 'restaurant', types: ['restaurant'], editorialSummary: 'Japanese sushi restaurant', regularOpeningPeriods: [{ open: { day: 2, hour: 10, minute: 0 }, close: { day: 2, hour: 23, minute: 0 } }] },
+  };
+
+  const placesService = {
+    details: async () => ({ placeId: 'origin', name: 'Origin', formattedAddress: 'Singapore', lat: 1.3, lng: 103.8, types: ['locality'] }),
+    searchForSubgroup: async (input: { subgroup: string }) => mockCandidates[input.subgroup] ?? [],
+    placeVerificationDetails: async (placeId: string) => detailMap[placeId],
   } as unknown as PlacesService;
 
-  const mockedBuilder = {
-    build: async (input: GenerateItineraryRequest) => {
-      capturedOriginLat = input.origin.lat;
+  const directions = {
+    routeLeg: async () => ({ durationMin: 10, distanceM: 400, mode: 'WALK' as const, walkingDistanceM: 400 }),
+  } as unknown as DirectionsService;
+
+  const service = new ItinerariesService(placesService, directions);
+  const result = await service.generateItinerary(request());
+
+  assert.equal(result.status, 'OK');
+  if (result.status !== 'OK') return;
+
+  assert.equal(result.stops[0].name, 'Escape Room Operator');
+  assert.equal(result.stops[1].name, 'Sushi Place');
+});
+
+test('itinerary generation falls back to lower scoring core candidate when top pick exceeds remaining duration', async () => {
+  const placesService = {
+    details: async () => ({ placeId: 'origin', name: 'Origin', formattedAddress: 'Singapore', lat: 1.3, lng: 103.8, types: ['locality'] }),
+    searchForSubgroup: async (input: { subgroup: string }) => {
+      if (input.subgroup === 'CINEMA') {
+        return [
+          { kind: 'PLACE', externalId: 'cinema-long', name: 'Mega Cinema', lat: 1.3001, lng: 103.8001, types: ['movie_theater'], rating: 4.9, reviewCount: 2000 },
+        ];
+      }
+
+      if (input.subgroup === 'MUSEUM') {
+        return [
+          { kind: 'PLACE', externalId: 'museum-fit', name: 'City Museum', lat: 1.3002, lng: 103.8002, types: ['museum'], rating: 4.0, reviewCount: 150 },
+        ];
+      }
+
+      return [];
+    },
+    placeVerificationDetails: async (placeId: string) => {
+      if (placeId === 'cinema-long') {
+        return {
+          placeId,
+          name: 'Mega Cinema',
+          types: ['movie_theater'],
+          editorialSummary: 'Cinema complex',
+          regularOpeningPeriods: [{ open: { day: 2, hour: 9, minute: 0 }, close: { day: 2, hour: 23, minute: 0 } }],
+        };
+      }
+
       return {
-        itineraryId: 'iti_test',
-        stops: [],
-        legs: [],
-        totals: { durationMin: input.durationMin, walkingDistanceM: 0 },
-        meta: { usedCache: false, warnings: [], textSearchOptions: [] },
+        placeId,
+        name: 'City Museum',
+        types: ['museum'],
+        editorialSummary: 'Museum with galleries',
+        regularOpeningPeriods: [{ open: { day: 2, hour: 9, minute: 0 }, close: { day: 2, hour: 23, minute: 0 } }],
       };
     },
-  } as unknown as ItineraryBuilder;
+  } as unknown as PlacesService;
 
-  const service = new ItinerariesService(mockedPlacesService, mockedBuilder);
-  await service.generateItinerary(request());
+  const directions = {
+    routeLeg: async (_from: unknown, to: { lat: number }) => {
+      if (to.lat === 1.3001) {
+        return { durationMin: 15, distanceM: 500, mode: 'WALK' as const, walkingDistanceM: 500 };
+      }
 
-  assert.equal(capturedOriginLat, 1.2764);
+      return { durationMin: 10, distanceM: 300, mode: 'WALK' as const, walkingDistanceM: 300 };
+    },
+  } as unknown as DirectionsService;
+
+  const service = new ItinerariesService(placesService, directions);
+  const result = await service.generateItinerary({
+    ...request(),
+    durationMin: 90,
+    sequence: [{ type: 'CORE', core: 'DO' }],
+  });
+
+  assert.equal(result.status, 'OK');
+  if (result.status !== 'OK') return;
+
+  assert.equal(result.stops[0].name, 'City Museum');
+  assert.equal(result.stops[0].subgroup, 'MUSEUM');
 });
