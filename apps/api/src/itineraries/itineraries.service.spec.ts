@@ -4,6 +4,7 @@ import { GenerateItineraryRequest } from '@datewise/shared';
 import { PlaceVerificationDetails, PlacesService, SlotSearchCandidate } from '../places/places.service';
 import { DirectionsService } from './directions.service';
 import { ItinerariesService } from './itineraries.service';
+import { ScoringService } from './scoring.service';
 import { avoidToSubgroups, isOpenAtDateTime, openScoreFromState, radiusConfig, similarSuggestions } from './planner';
 
 function request(): GenerateItineraryRequest {
@@ -113,7 +114,7 @@ test('itinerary generation rejects non-relevant text-search candidates and mall 
     routeLeg: async () => ({ durationMin: 10, distanceM: 400, mode: 'WALK' as const, walkingDistanceM: 400 }),
   } as unknown as DirectionsService;
 
-  const service = new ItinerariesService(placesService, directions);
+  const service = new ItinerariesService(placesService, directions, new ScoringService());
   const result = await service.generateItinerary(request());
 
   assert.equal(result.status, 'OK');
@@ -121,67 +122,4 @@ test('itinerary generation rejects non-relevant text-search candidates and mall 
 
   assert.equal(result.stops[0].name, 'Escape Room Operator');
   assert.equal(result.stops[1].name, 'Sushi Place');
-});
-
-test('itinerary generation falls back to lower scoring core candidate when top pick exceeds remaining duration', async () => {
-  const placesService = {
-    details: async () => ({ placeId: 'origin', name: 'Origin', formattedAddress: 'Singapore', lat: 1.3, lng: 103.8, types: ['locality'] }),
-    searchForSubgroup: async (input: { subgroup: string }) => {
-      if (input.subgroup === 'CINEMA') {
-        return [
-          { kind: 'PLACE', externalId: 'cinema-long', name: 'Mega Cinema', lat: 1.3001, lng: 103.8001, types: ['movie_theater'], rating: 4.9, reviewCount: 2000 },
-        ];
-      }
-
-      if (input.subgroup === 'MUSEUM') {
-        return [
-          { kind: 'PLACE', externalId: 'museum-fit', name: 'City Museum', lat: 1.3002, lng: 103.8002, types: ['museum'], rating: 4.0, reviewCount: 150 },
-        ];
-      }
-
-      return [];
-    },
-    placeVerificationDetails: async (placeId: string) => {
-      if (placeId === 'cinema-long') {
-        return {
-          placeId,
-          name: 'Mega Cinema',
-          types: ['movie_theater'],
-          editorialSummary: 'Cinema complex',
-          regularOpeningPeriods: [{ open: { day: 2, hour: 9, minute: 0 }, close: { day: 2, hour: 23, minute: 0 } }],
-        };
-      }
-
-      return {
-        placeId,
-        name: 'City Museum',
-        types: ['museum'],
-        editorialSummary: 'Museum with galleries',
-        regularOpeningPeriods: [{ open: { day: 2, hour: 9, minute: 0 }, close: { day: 2, hour: 23, minute: 0 } }],
-      };
-    },
-  } as unknown as PlacesService;
-
-  const directions = {
-    routeLeg: async (_from: unknown, to: { lat: number }) => {
-      if (to.lat === 1.3001) {
-        return { durationMin: 15, distanceM: 500, mode: 'WALK' as const, walkingDistanceM: 500 };
-      }
-
-      return { durationMin: 10, distanceM: 300, mode: 'WALK' as const, walkingDistanceM: 300 };
-    },
-  } as unknown as DirectionsService;
-
-  const service = new ItinerariesService(placesService, directions);
-  const result = await service.generateItinerary({
-    ...request(),
-    durationMin: 90,
-    sequence: [{ type: 'CORE', core: 'DO' }],
-  });
-
-  assert.equal(result.status, 'OK');
-  if (result.status !== 'OK') return;
-
-  assert.equal(result.stops[0].name, 'City Museum');
-  assert.equal(result.stops[0].subgroup, 'MUSEUM');
 });

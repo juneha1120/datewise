@@ -607,6 +607,12 @@ export class PlacesService {
   }
 
   async placeVerificationDetails(placeId: string): Promise<PlaceVerificationDetails> {
+    const cacheKey = `verification:${placeId}`;
+    const cached = this.cache.get<PlaceVerificationDetails>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     const payload = await fetchJsonWithRetry<unknown>(`${GOOGLE_API_BASE}/places/${encodeURIComponent(placeId)}?languageCode=en`, {
       headers: this.buildJsonHeaders('id,displayName.text,types,primaryType,editorialSummary.text,regularOpeningHours.periods.open.day,regularOpeningHours.periods.open.hour,regularOpeningHours.periods.open.minute,regularOpeningHours.periods.close.day,regularOpeningHours.periods.close.hour,regularOpeningHours.periods.close.minute'),
     });
@@ -631,7 +637,7 @@ export class PlacesService {
         .optional(),
     }).parse(payload);
 
-    return {
+    const normalized: PlaceVerificationDetails = {
       placeId: parsed.id,
       primaryType: parsed.primaryType,
       types: parsed.types,
@@ -639,6 +645,9 @@ export class PlacesService {
       editorialSummary: parsed.editorialSummary?.text,
       regularOpeningPeriods: parsed.regularOpeningHours?.periods,
     };
+
+    this.cache.set(cacheKey, normalized, 5 * 60_000);
+    return normalized;
   }
 
   async candidatesNearOrigin(originPlaceId: string): Promise<DebugPlaceCandidatesResponse> {

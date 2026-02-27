@@ -78,7 +78,7 @@ Behavior
 - Global cap: total travel time must be <= 25% of `durationMin`, else conflict.
 - Stage A retrieval keeps up to 20 candidates.
 - Stage B verification fetches details for top 10 and applies match confidence threshold (`>= 0.6`), forbidden primary type checks, and open-hours checks.
-- Unknown opening-hours are penalized (`openScore = 0.7`); closed places are hard-rejected.
+- Open-hours are evaluated against the requested future `date` + computed arrival time using weekly periods from Place Details (`regularOpeningHours.periods`) as best-effort. Unknown opening-hours are penalized (`openScore = 0.7`); closed places are hard-rejected.
 - Scoring formula:
   - `0.30*distanceScore + 0.20*qualityScore + 0.15*budgetFitScore + 0.15*openScore + 0.20*matchConfidence`
 
