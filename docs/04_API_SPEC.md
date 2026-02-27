@@ -28,7 +28,6 @@ Request
   },
   "date": "YYYY-MM-DD",
   "startTime": "HH:mm",
-  "durationMin": 240,
   "budgetLevel": 1,
   "radiusMode": "WALKABLE|SHORT_TRANSIT|CAR_GRAB",
   "sequence": [
@@ -39,7 +38,6 @@ Request
     { "type": "CORE", "core": "SIP" },
     { "type": "SUBGROUP", "subgroup": "SHOPPING" }
   ]
-<<<<<<< HEAD
 }
 ```
 
@@ -50,8 +48,8 @@ Success response
   "itineraryId": "string",
   "stops": [{ "name": "string", "core": "EAT", "subgroup": "JAPANESE", "matchConfidence": 0.82 }],
   "legs": [{ "from": 0, "to": 1, "mode": "TRANSIT", "durationMin": 12, "distanceM": 2000 }],
-  "totals": { "durationMin": 240, "walkingDistanceM": 1200 },
-  "meta": { "usedCache": false, "warnings": [], "totalTravelTimeMin": 36 }
+  "totals": { "durationMin": 210, "durationLabel": "3 hours 30 min", "walkingDistanceM": 1200 },
+  "meta": { "usedCache": false, "warnings": [], "totalTravelTimeMin": 36, "travelTimeRatio": 0.171 }
 }
 ```
 
@@ -69,37 +67,6 @@ Conflict response
 }
 ```
 
-=======
-}
-```
-
-Success response
-```json
-{
-  "status": "OK",
-  "itineraryId": "string",
-  "stops": [{ "name": "string", "core": "EAT", "subgroup": "JAPANESE", "matchConfidence": 0.82 }],
-  "legs": [{ "from": 0, "to": 1, "mode": "TRANSIT", "durationMin": 12, "distanceM": 2000 }],
-  "totals": { "durationMin": 240, "walkingDistanceM": 1200 },
-  "meta": { "usedCache": false, "warnings": [], "totalTravelTimeMin": 36 }
-}
-```
-
-Conflict response
-```json
-{
-  "status": "CONFLICT",
-  "reason": "NO_CANDIDATES_WITHIN_RADIUS|ONLY_CANDIDATES_TOO_FAR|ALL_BLOCKED_BY_AVOID|CLOSED_AT_TIME|INSUFFICIENT_TIME_FOR_TRAVEL",
-  "message": "string",
-  "suggestions": [
-    { "type": "UPGRADE_RADIUS_MODE", "recommendedRadiusMode": "SHORT_TRANSIT", "message": "Try a wider radius mode." },
-    { "type": "SUBSTITUTE_SUBGROUP", "slotIndex": 1, "fromSubgroup": "COFFEE", "toSubgroups": ["TEA_HOUSE"], "message": "Try nearby alternatives within the same core group." },
-    { "type": "RECENTER_AROUND_SLOT", "slotIndex": 1, "message": "Recenter itinerary around the difficult slot." }
-  ]
-}
-```
-
->>>>>>> main
 Behavior
 - Sequence size is 2–5 slots. Each slot can be core-based or subgroup-specific.
 - Avoid list supports only core and subgroup items; core avoid blocks all child subgroups.
@@ -107,18 +74,16 @@ Behavior
   - WALKABLE: max leg 1km, walking.
   - SHORT_TRANSIT: max leg 5km, transit with walking fallback.
   - CAR_GRAB: max leg 15km, driving.
-- Global cap: total travel time must be <= 25% of `durationMin`, else conflict.
+- Global cap: total travel time must be <= 25% of computed itinerary duration, else conflict.
 - Stage A retrieval keeps up to 20 candidates.
 - Stage B verification fetches details for top 10 and applies match confidence threshold (`>= 0.6`), forbidden primary type checks, and open-hours checks.
 - Open-hours are evaluated against the requested future `date` + computed arrival time using weekly periods from Place Details (`regularOpeningHours.periods`) as best-effort. Unknown opening-hours are penalized (`openScore = 0.7`); closed places are hard-rejected.
+- During slot selection, planner performs one-step lookahead and avoids picking a current stop when that choice would make the immediate next slot closed at projected arrival.
 - Scoring formula:
   - `0.30*distanceScore + 0.20*qualityScore + 0.15*budgetFitScore + 0.15*openScore + 0.20*matchConfidence`
-<<<<<<< HEAD
-=======
 
 ## POST /v1/itineraries/replace-stop-with-text-search
 Deprecated for refined model.
->>>>>>> main
 
 ## Runtime requirements
 - `GOOGLE_MAPS_API_KEY` in repo root `.env`.
