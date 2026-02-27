@@ -16,3 +16,18 @@ test('routeLeg maps walking mode for walkable radius', async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+test('routeLeg falls back to estimated leg when Google returns invalid response shape', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ malformed: true }) }) as Response;
+
+  try {
+    const service = new DirectionsService();
+    const leg = await service.routeLeg({ lat: 1.3, lng: 103.8 }, { lat: 1.31, lng: 103.82 }, 'SHORT_TRANSIT');
+    assert.equal(leg.mode, 'TRANSIT');
+    assert.equal(leg.durationMin > 0, true);
+    assert.equal(leg.distanceM > 0, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

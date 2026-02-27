@@ -26,15 +26,14 @@ import {
 
 const FORBIDDEN_EAT_PRIMARY_TYPES = new Set(['shopping_mall', 'department_store', 'tourist_attraction', 'lodging']);
 const EAT_NAME_BLOCKLIST = [' mall ', ' plaza ', ' centre ', ' center '];
-const LOOKAHEAD_CURRENT_LIMIT = 5;
-const LOOKAHEAD_NEXT_CANDIDATE_LIMIT = 5;
+const MAX_SUBGROUP_OPTIONS_PER_SLOT = 6;
+const MAX_CANDIDATES_PER_SUBGROUP = 5;
+const MAX_LOOKAHEAD_CURRENT_CHOICES = 3;
+const MAX_LOOKAHEAD_SUBGROUPS = 3;
+const MAX_LOOKAHEAD_CANDIDATES = 3;
 
 type SlotPick = { subgroup: Subgroup; place: SlotSearchCandidate; matchConfidence: number; openState: 'OPEN' | 'UNKNOWN' | 'CLOSED'; score: number };
 type CandidateEvaluation = { subgroup: Subgroup; place: SlotSearchCandidate; matchConfidence: number; openState: 'OPEN' | 'UNKNOWN' | 'CLOSED'; score: number; leg: { durationMin: number; distanceM: number; mode: ItineraryLeg['mode']; walkingDistanceM: number } };
-type LookaheadNextCandidate = {
-  candidate: SlotSearchCandidate;
-  details: PlaceVerificationDetails;
-};
 
 type ReplaceStopWithTextSearchRequest = {
   originPlaceId: string;
@@ -92,7 +91,7 @@ export class ItinerariesService {
     let walkingDistanceM = 0;
 
     for (let i = 0; i < request.sequence.length; i += 1) {
-      const options = resolveSlotSubgroups(request.sequence[i], avoid);
+      const options = this.limitSlotSubgroups(resolveSlotSubgroups(request.sequence[i], avoid));
       if (options.length === 0) return this.conflict('ALL_BLOCKED_BY_AVOID', 'Avoid list removed all candidates for slot.', request, i, undefined, avoid);
 
       let best: CandidateEvaluation | undefined;
@@ -109,7 +108,7 @@ export class ItinerariesService {
           textQuery: TEXT_QUERY_MAP[subgroup],
         });
 
-        for (const candidate of candidates.slice(0, 20).slice(0, 10)) {
+        for (const candidate of candidates.slice(0, MAX_CANDIDATES_PER_SUBGROUP)) {
           const leg = await this.directionsService.routeLeg(nowLatLng, { lat: candidate.lat, lng: candidate.lng }, request.radiusMode);
           if (leg.distanceM > radius.maxLegKm * 1000) {
             foundTooFar = true;
@@ -146,12 +145,11 @@ export class ItinerariesService {
       best = evaluated[0];
 
       if (i < request.sequence.length - 1) {
-        const nextOptions = resolveSlotSubgroups(request.sequence[i + 1], avoid);
+        const nextOptions = this.limitSlotSubgroups(resolveSlotSubgroups(request.sequence[i + 1], avoid));
         const feasible = await this.findFirstWithFeasibleNextStop({
           request,
           currentSlotIndex: i,
           nowElapsedMin: elapsedMin,
-          lookaheadOrigin: nowLatLng,
           nowOptions: evaluated,
           nextOptions,
           maxLegKm: radius.maxLegKm,
@@ -252,30 +250,37 @@ export class ItinerariesService {
     request: GenerateItineraryRequest;
     currentSlotIndex: number;
     nowElapsedMin: number;
-    lookaheadOrigin: { lat: number; lng: number };
     nowOptions: CandidateEvaluation[];
     nextOptions: Subgroup[];
     maxLegKm: number;
   }): Promise<CandidateEvaluation | undefined> {
-    const { request, nowOptions, nextOptions, maxLegKm, nowElapsedMin, lookaheadOrigin } = input;
+    const { request, nowOptions, nextOptions, maxLegKm, nowElapsedMin } = input;
     if (nextOptions.length === 0) return undefined;
 
-    const lookaheadCurrentOptions = nowOptions.slice(0, LOOKAHEAD_CURRENT_LIMIT);
-    const nextLookaheadCandidates = await this.buildNextLookaheadCandidates({ lookaheadOrigin, nextOptions, maxLegKm });
-    if (nextLookaheadCandidates.length === 0) return undefined;
-
-    for (const current of lookaheadCurrentOptions) {
+    for (const current of nowOptions.slice(0, MAX_LOOKAHEAD_CURRENT_CHOICES)) {
       const afterCurrentStopMin = nowElapsedMin + current.leg.durationMin + subgroupDurationMin(current.subgroup);
       const currentPoint = { lat: current.place.lat, lng: current.place.lng };
 
-      for (const nextOption of nextLookaheadCandidates) {
-        const nextLeg = await this.directionsService.routeLeg(currentPoint, { lat: nextOption.candidate.lat, lng: nextOption.candidate.lng }, request.radiusMode);
+      for (const nextSubgroup of nextOptions.slice(0, MAX_LOOKAHEAD_SUBGROUPS)) {
+        const nextCandidates = await this.placesService.searchForSubgroup({
+          origin: currentPoint,
+          subgroup: nextSubgroup,
+          maxLegKm,
+          requiredTypes: TYPE_MAP[nextSubgroup],
+          textQuery: TEXT_QUERY_MAP[nextSubgroup],
+        });
+
+        for (const nextCandidate of nextCandidates.slice(0, MAX_LOOKAHEAD_CANDIDATES)) {
+          const nextLeg = await this.directionsService.routeLeg(currentPoint, { lat: nextCandidate.lat, lng: nextCandidate.lng }, request.radiusMode);
           if (nextLeg.distanceM > maxLegKm * 1000) continue;
 
-        const nextArrival = addMinutes(request.startTime, afterCurrentStopMin + nextLeg.durationMin);
-        const nextOpenScore = openScoreFromState(isOpenAtDateTime(nextOption.details.regularOpeningPeriods, request.date, nextArrival));
-        if (nextOpenScore > 0) {
-          return current;
+          const nextArrival = addMinutes(request.startTime, afterCurrentStopMin + nextLeg.durationMin);
+          const details = await this.placesService.placeVerificationDetails(nextCandidate.externalId);
+          if (this.matchConfidence(nextSubgroup, nextCandidate, details) < 0.6) continue;
+
+          if (openScoreFromState(isOpenAtDateTime(details.regularOpeningPeriods, request.date, nextArrival)) > 0) {
+            return current;
+          }
         }
       }
     }
@@ -283,32 +288,9 @@ export class ItinerariesService {
     return undefined;
   }
 
-  private async buildNextLookaheadCandidates(input: {
-    lookaheadOrigin: { lat: number; lng: number };
-    nextOptions: Subgroup[];
-    maxLegKm: number;
-  }): Promise<LookaheadNextCandidate[]> {
-    const { lookaheadOrigin, nextOptions, maxLegKm } = input;
-    const nextCandidates: LookaheadNextCandidate[] = [];
-
-    for (const nextSubgroup of nextOptions) {
-      const rawCandidates = await this.placesService.searchForSubgroup({
-        origin: lookaheadOrigin,
-        subgroup: nextSubgroup,
-        maxLegKm,
-        requiredTypes: TYPE_MAP[nextSubgroup],
-        textQuery: TEXT_QUERY_MAP[nextSubgroup],
-      });
-
-      for (const candidate of rawCandidates.slice(0, LOOKAHEAD_NEXT_CANDIDATE_LIMIT)) {
-        const details = await this.placesService.placeVerificationDetails(candidate.externalId);
-        if (this.matchConfidence(nextSubgroup, candidate, details) < 0.6) continue;
-
-        nextCandidates.push({ candidate, details });
-      }
-    }
-
-    return nextCandidates;
+  private limitSlotSubgroups(options: Subgroup[]): Subgroup[] {
+    if (options.length <= MAX_SUBGROUP_OPTIONS_PER_SLOT) return options;
+    return options.slice(0, MAX_SUBGROUP_OPTIONS_PER_SLOT);
   }
 
   private conflict(

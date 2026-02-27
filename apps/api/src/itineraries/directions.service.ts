@@ -36,10 +36,27 @@ export class DirectionsService {
       this.cache.set(cacheKey, routed, DIRECTIONS_CACHE_TTL_MS);
       return routed;
     } catch (error) {
+      if (this.isInvalidRouteResponseError(error)) {
+        const estimated = this.estimateLeg(from, to, mode.legMode);
+        this.cache.set(cacheKey, estimated, DIRECTIONS_CACHE_TTL_MS);
+        return estimated;
+      }
+
       if (radiusMode === 'SHORT_TRANSIT') {
-        const fallback = await this.fetchLeg(from, to, 'walking', 'WALK');
+        const fallback = await this.fetchLegWithEstimateFallback(from, to, 'walking', 'WALK');
         this.cache.set(cacheKey, fallback, DIRECTIONS_CACHE_TTL_MS);
         return fallback;
+      }
+      throw error;
+    }
+  }
+
+  private async fetchLegWithEstimateFallback(from: { lat: number; lng: number }, to: { lat: number; lng: number }, requestMode: string, legMode: ItineraryLeg['mode']): Promise<RoutedLeg> {
+    try {
+      return await this.fetchLeg(from, to, requestMode, legMode);
+    } catch (error) {
+      if (this.isInvalidRouteResponseError(error)) {
+        return this.estimateLeg(from, to, legMode);
       }
       throw error;
     }
@@ -64,4 +81,36 @@ export class DirectionsService {
     const stepWalkingDistanceM = firstLeg.steps.filter((step) => step.travel_mode === 'WALKING').reduce((sum, step) => sum + (step.distance?.value ?? 0), 0);
     return { durationMin: Math.max(1, Math.round(firstLeg.duration.value / 60)), distanceM: firstLeg.distance.value, mode: legMode, walkingDistanceM: stepWalkingDistanceM };
   }
+
+  private isInvalidRouteResponseError(error: unknown): boolean {
+    if (!(error instanceof HttpException)) return false;
+    if (error.getStatus() !== HttpStatus.BAD_GATEWAY) return false;
+    const response = error.getResponse();
+    const message = typeof response === 'object' && response && 'message' in response ? String(response.message) : '';
+    return message.includes('Invalid route response from Google Directions.');
+  }
+
+  private estimateLeg(from: { lat: number; lng: number }, to: { lat: number; lng: number }, legMode: ItineraryLeg['mode']): RoutedLeg {
+    const distanceM = haversineDistanceMeters(from, to);
+    const metersPerMinute = legMode === 'WALK' ? 75 : legMode === 'TRANSIT' ? 350 : 450;
+    const durationMin = Math.max(1, Math.round(distanceM / metersPerMinute));
+    const walkingDistanceM = legMode === 'WALK' ? distanceM : 0;
+    return { durationMin, distanceM: Math.max(1, distanceM), mode: legMode, walkingDistanceM };
+  }
+}
+
+function haversineDistanceMeters(from: { lat: number; lng: number }, to: { lat: number; lng: number }): number {
+  const earthRadiusMeters = 6_371_000;
+  const toRadians = (value: number): number => (value * Math.PI) / 180;
+
+  const latDistanceRad = toRadians(to.lat - from.lat);
+  const lngDistanceRad = toRadians(to.lng - from.lng);
+  const fromLatRad = toRadians(from.lat);
+  const toLatRad = toRadians(to.lat);
+
+  const a =
+    Math.sin(latDistanceRad / 2) * Math.sin(latDistanceRad / 2) +
+    Math.cos(fromLatRad) * Math.cos(toLatRad) * Math.sin(lngDistanceRad / 2) * Math.sin(lngDistanceRad / 2);
+
+  return Math.round(earthRadiusMeters * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))));
 }

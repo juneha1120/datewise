@@ -127,42 +127,24 @@ test('itinerary generation avoids current stop choices that make next stop close
   const req = request();
   req.sequence = [{ type: 'SUBGROUP', subgroup: 'COFFEE' }, { type: 'SUBGROUP', subgroup: 'DESSERT' }];
 
-  const dessertCandidates: SlotSearchCandidate[] = [
-    { kind: 'PLACE', externalId: 'dessert-only', name: 'Dessert Bar', lat: 1.3003, lng: 103.8003, types: ['bakery'] },
-    { kind: 'PLACE', externalId: 'dessert-extra-1', name: 'Dessert One', lat: 1.3011, lng: 103.8011, types: ['bakery'] },
-    { kind: 'PLACE', externalId: 'dessert-extra-2', name: 'Dessert Two', lat: 1.3012, lng: 103.8012, types: ['bakery'] },
-    { kind: 'PLACE', externalId: 'dessert-extra-3', name: 'Dessert Three', lat: 1.3013, lng: 103.8013, types: ['bakery'] },
-    { kind: 'PLACE', externalId: 'dessert-extra-4', name: 'Dessert Four', lat: 1.3014, lng: 103.8014, types: ['bakery'] },
-    { kind: 'PLACE', externalId: 'dessert-extra-5', name: 'Dessert Five', lat: 1.3015, lng: 103.8015, types: ['bakery'] },
-  ];
-
   const mockCandidates: Record<string, SlotSearchCandidate[]> = {
     COFFEE: [
       { kind: 'PLACE', externalId: 'coffee-bad', name: 'Late Coffee', lat: 1.3001, lng: 103.8001, types: ['cafe'] },
       { kind: 'PLACE', externalId: 'coffee-good', name: 'Quick Coffee', lat: 1.3002, lng: 103.8002, types: ['cafe'] },
     ],
-    DESSERT: dessertCandidates,
+    DESSERT: [{ kind: 'PLACE', externalId: 'dessert-only', name: 'Dessert Bar', lat: 1.3003, lng: 103.8003, types: ['bakery'] }],
   };
 
   const detailMap: Record<string, PlaceVerificationDetails> = {
     'coffee-bad': { placeId: 'coffee-bad', name: 'Late Coffee', primaryType: 'cafe', types: ['cafe'], editorialSummary: 'specialty coffee', regularOpeningPeriods: [{ open: { day: 2, hour: 8, minute: 0 }, close: { day: 2, hour: 23, minute: 0 } }] },
     'coffee-good': { placeId: 'coffee-good', name: 'Quick Coffee', primaryType: 'cafe', types: ['cafe'], editorialSummary: 'specialty coffee', regularOpeningPeriods: [{ open: { day: 2, hour: 8, minute: 0 }, close: { day: 2, hour: 23, minute: 0 } }] },
     'dessert-only': { placeId: 'dessert-only', name: 'Dessert Bar', primaryType: 'bakery', types: ['bakery'], editorialSummary: 'dessert and pastry', regularOpeningPeriods: [{ open: { day: 2, hour: 11, minute: 0 }, close: { day: 2, hour: 12, minute: 20 } }] },
-    'dessert-extra-1': { placeId: 'dessert-extra-1', name: 'Dessert One', primaryType: 'bakery', types: ['bakery'], editorialSummary: 'dessert and pastry', regularOpeningPeriods: [{ open: { day: 2, hour: 6, minute: 0 }, close: { day: 2, hour: 23, minute: 0 } }] },
-    'dessert-extra-2': { placeId: 'dessert-extra-2', name: 'Dessert Two', primaryType: 'bakery', types: ['bakery'], editorialSummary: 'dessert and pastry', regularOpeningPeriods: [{ open: { day: 2, hour: 6, minute: 0 }, close: { day: 2, hour: 23, minute: 0 } }] },
-    'dessert-extra-3': { placeId: 'dessert-extra-3', name: 'Dessert Three', primaryType: 'bakery', types: ['bakery'], editorialSummary: 'dessert and pastry', regularOpeningPeriods: [{ open: { day: 2, hour: 6, minute: 0 }, close: { day: 2, hour: 23, minute: 0 } }] },
-    'dessert-extra-4': { placeId: 'dessert-extra-4', name: 'Dessert Four', primaryType: 'bakery', types: ['bakery'], editorialSummary: 'dessert and pastry', regularOpeningPeriods: [{ open: { day: 2, hour: 6, minute: 0 }, close: { day: 2, hour: 23, minute: 0 } }] },
-    'dessert-extra-5': { placeId: 'dessert-extra-5', name: 'Dessert Five', primaryType: 'bakery', types: ['bakery'], editorialSummary: 'dessert and pastry', regularOpeningPeriods: [{ open: { day: 2, hour: 6, minute: 0 }, close: { day: 2, hour: 23, minute: 0 } }] },
   };
 
-  let lookaheadDessertDetailCalls = 0;
   const placesService = {
     details: async () => ({ placeId: 'origin', name: 'Origin', formattedAddress: 'Singapore', lat: 1.3, lng: 103.8, types: ['locality'] }),
     searchForSubgroup: async (input: { subgroup: string }) => mockCandidates[input.subgroup] ?? [],
-    placeVerificationDetails: async (placeId: string) => {
-      if (placeId.startsWith('dessert-')) lookaheadDessertDetailCalls += 1;
-      return detailMap[placeId];
-    },
+    placeVerificationDetails: async (placeId: string) => detailMap[placeId],
   } as unknown as PlacesService;
 
   const directions = {
@@ -182,5 +164,36 @@ test('itinerary generation avoids current stop choices that make next stop close
 
   assert.equal(result.stops[0].name, 'Quick Coffee');
   assert.equal(result.stops[1].name, 'Dessert Bar');
-  assert.equal(lookaheadDessertDetailCalls, 11);
+});
+
+test('itinerary generation limits subgroup fanout to reduce external API usage', async () => {
+  const req = request();
+  req.sequence = [{ type: 'CORE', core: 'DO' }, { type: 'SUBGROUP', subgroup: 'COFFEE' }];
+
+  const subgroupCalls: string[] = [];
+  const placesService = {
+    details: async () => ({ placeId: 'origin', name: 'Origin', formattedAddress: 'Singapore', lat: 1.3, lng: 103.8, types: ['locality'] }),
+    searchForSubgroup: async (input: { subgroup: string }) => {
+      subgroupCalls.push(input.subgroup);
+      return [{ kind: 'PLACE', externalId: `id-${input.subgroup}`, name: `${input.subgroup} Place`, lat: 1.3001, lng: 103.8001, types: ['point_of_interest'] }];
+    },
+    placeVerificationDetails: async (placeId: string) => ({
+      placeId,
+      name: placeId,
+      types: ['point_of_interest', 'cafe'],
+      editorialSummary: 'museum attraction coffee',
+      regularOpeningPeriods: [{ open: { day: 2, hour: 0, minute: 0 }, close: { day: 2, hour: 23, minute: 59 } }],
+    }),
+  } as unknown as PlacesService;
+
+  const directions = {
+    routeLeg: async () => ({ durationMin: 4, distanceM: 300, mode: 'WALK' as const, walkingDistanceM: 300 }),
+  } as unknown as DirectionsService;
+
+  const service = new ItinerariesService(placesService, directions, new ScoringService());
+  const result = await service.generateItinerary(req);
+
+  assert.equal(result.status === 'OK' || result.status === 'CONFLICT', true);
+  const doCalls = subgroupCalls.filter((subgroup) => subgroup !== 'COFFEE');
+  assert.equal(doCalls.length <= 6, true);
 });

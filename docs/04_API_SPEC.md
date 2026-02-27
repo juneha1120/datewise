@@ -77,8 +77,10 @@ Behavior
 - Global cap: total travel time must be <= 25% of computed itinerary duration, else conflict.
 - Stage A retrieval keeps up to 20 candidates.
 - Stage B verification fetches details for top 10 and applies match confidence threshold (`>= 0.6`), forbidden primary type checks, and open-hours checks.
+- Planner uses bounded fanout per slot (subgroups + candidate checks + lookahead checks) to limit Places/Directions call volume.
 - Open-hours are evaluated against the requested future `date` + computed arrival time using weekly periods from Place Details (`regularOpeningHours.periods`) as best-effort. Unknown opening-hours are penalized (`openScore = 0.7`); closed places are hard-rejected.
 - During slot selection, planner performs one-step lookahead and avoids picking a current stop when that choice would make the immediate next slot closed at projected arrival.
+- If Directions returns malformed route payloads, routing falls back to a distance-based ETA estimate instead of failing the whole itinerary request.
 - Scoring formula:
   - `0.30*distanceScore + 0.20*qualityScore + 0.15*budgetFitScore + 0.15*openScore + 0.20*matchConfidence`
 
