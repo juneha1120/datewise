@@ -179,28 +179,6 @@ export const ItineraryConflictReasonSchema = z.enum([
   'CLOSED_AT_TIME',
   'INSUFFICIENT_TIME_FOR_TRAVEL',
 ]);
-<<<<<<< HEAD
-=======
-
-export const ConflictSuggestionSchema = z.object({
-  type: z.enum(['UPGRADE_RADIUS_MODE', 'SUBSTITUTE_SUBGROUP', 'RECENTER_AROUND_SLOT']),
-  message: z.string().min(1),
-  slotIndex: z.number().int().min(0).optional(),
-  fromSubgroup: SubgroupSchema.optional(),
-  toSubgroups: z.array(SubgroupSchema).optional(),
-  recommendedRadiusMode: RadiusModeSchema.optional(),
-});
-
-export const GenerateItineraryConflictResponseSchema = z.object({
-  status: z.literal('CONFLICT'),
-  reason: ItineraryConflictReasonSchema,
-  message: z.string().min(1),
-  suggestions: z.array(ConflictSuggestionSchema),
-});
-
-export const GenerateItineraryResultSchema = z.union([GenerateItineraryResponseSchema, GenerateItineraryConflictResponseSchema]);
-
->>>>>>> main
 
 export const ConflictSuggestionSchema = z.object({
   type: z.enum(['UPGRADE_RADIUS_MODE', 'SUBSTITUTE_SUBGROUP', 'RECENTER_AROUND_SLOT']),
@@ -250,7 +228,3 @@ export type ItineraryConflictReason = z.infer<typeof ItineraryConflictReasonSche
 export type ConflictSuggestion = z.infer<typeof ConflictSuggestionSchema>;
 export type GenerateItineraryConflictResponse = z.infer<typeof GenerateItineraryConflictResponseSchema>;
 export type GenerateItineraryResult = z.infer<typeof GenerateItineraryResultSchema>;
-<<<<<<< HEAD
-=======
-export type ReplaceStopWithTextSearchRequest = z.infer<typeof ReplaceStopWithTextSearchRequestSchema>;
->>>>>>> main
