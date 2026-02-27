@@ -12,7 +12,6 @@ function request(): GenerateItineraryRequest {
     origin: { placeId: 'origin', name: 'Origin', formattedAddress: 'Singapore', lat: 1.3, lng: 103.8, types: ['locality'] },
     date: '2026-03-10',
     startTime: '10:30',
-    durationMin: 180,
     budgetLevel: 2,
     radiusMode: 'SHORT_TRANSIT',
     sequence: [{ type: 'SUBGROUP', subgroup: 'ESCAPE_ROOM' }, { type: 'CORE', core: 'EAT' }],
@@ -122,4 +121,79 @@ test('itinerary generation rejects non-relevant text-search candidates and mall 
 
   assert.equal(result.stops[0].name, 'Escape Room Operator');
   assert.equal(result.stops[1].name, 'Sushi Place');
+});
+
+test('itinerary generation avoids current stop choices that make next stop closed on arrival', async () => {
+  const req = request();
+  req.sequence = [{ type: 'SUBGROUP', subgroup: 'COFFEE' }, { type: 'SUBGROUP', subgroup: 'DESSERT' }];
+
+  const mockCandidates: Record<string, SlotSearchCandidate[]> = {
+    COFFEE: [
+      { kind: 'PLACE', externalId: 'coffee-bad', name: 'Late Coffee', lat: 1.3001, lng: 103.8001, types: ['cafe'] },
+      { kind: 'PLACE', externalId: 'coffee-good', name: 'Quick Coffee', lat: 1.3002, lng: 103.8002, types: ['cafe'] },
+    ],
+    DESSERT: [{ kind: 'PLACE', externalId: 'dessert-only', name: 'Dessert Bar', lat: 1.3003, lng: 103.8003, types: ['bakery'] }],
+  };
+
+  const detailMap: Record<string, PlaceVerificationDetails> = {
+    'coffee-bad': { placeId: 'coffee-bad', name: 'Late Coffee', primaryType: 'cafe', types: ['cafe'], editorialSummary: 'specialty coffee', regularOpeningPeriods: [{ open: { day: 2, hour: 8, minute: 0 }, close: { day: 2, hour: 23, minute: 0 } }] },
+    'coffee-good': { placeId: 'coffee-good', name: 'Quick Coffee', primaryType: 'cafe', types: ['cafe'], editorialSummary: 'specialty coffee', regularOpeningPeriods: [{ open: { day: 2, hour: 8, minute: 0 }, close: { day: 2, hour: 23, minute: 0 } }] },
+    'dessert-only': { placeId: 'dessert-only', name: 'Dessert Bar', primaryType: 'bakery', types: ['bakery'], editorialSummary: 'dessert and pastry', regularOpeningPeriods: [{ open: { day: 2, hour: 11, minute: 0 }, close: { day: 2, hour: 12, minute: 20 } }] },
+  };
+
+  const placesService = {
+    details: async () => ({ placeId: 'origin', name: 'Origin', formattedAddress: 'Singapore', lat: 1.3, lng: 103.8, types: ['locality'] }),
+    searchForSubgroup: async (input: { subgroup: string }) => mockCandidates[input.subgroup] ?? [],
+    placeVerificationDetails: async (placeId: string) => detailMap[placeId],
+  } as unknown as PlacesService;
+
+  const directions = {
+    routeLeg: async (from: { lat: number; lng: number }, to: { lat: number; lng: number }) => {
+      if (to.lat === 1.3001) return { durationMin: 10, distanceM: 400, mode: 'WALK' as const, walkingDistanceM: 400 };
+      if (to.lat === 1.3002) return { durationMin: 2, distanceM: 120, mode: 'WALK' as const, walkingDistanceM: 120 };
+      if (from.lat === 1.3001 && to.lat === 1.3003) return { durationMin: 20, distanceM: 900, mode: 'WALK' as const, walkingDistanceM: 900 };
+      return { durationMin: 8, distanceM: 350, mode: 'WALK' as const, walkingDistanceM: 350 };
+    },
+  } as unknown as DirectionsService;
+
+  const service = new ItinerariesService(placesService, directions, new ScoringService());
+  const result = await service.generateItinerary(req);
+
+  assert.equal(result.status, 'OK');
+  if (result.status !== 'OK') return;
+
+  assert.equal(result.stops[0].name, 'Quick Coffee');
+  assert.equal(result.stops[1].name, 'Dessert Bar');
+});
+
+test('itinerary generation limits subgroup fanout to reduce external API usage', async () => {
+  const req = request();
+  req.sequence = [{ type: 'CORE', core: 'DO' }, { type: 'SUBGROUP', subgroup: 'COFFEE' }];
+
+  const subgroupCalls: string[] = [];
+  const placesService = {
+    details: async () => ({ placeId: 'origin', name: 'Origin', formattedAddress: 'Singapore', lat: 1.3, lng: 103.8, types: ['locality'] }),
+    searchForSubgroup: async (input: { subgroup: string }) => {
+      subgroupCalls.push(input.subgroup);
+      return [{ kind: 'PLACE', externalId: `id-${input.subgroup}`, name: `${input.subgroup} Place`, lat: 1.3001, lng: 103.8001, types: ['point_of_interest'] }];
+    },
+    placeVerificationDetails: async (placeId: string) => ({
+      placeId,
+      name: placeId,
+      types: ['point_of_interest', 'cafe'],
+      editorialSummary: 'museum attraction coffee',
+      regularOpeningPeriods: [{ open: { day: 2, hour: 0, minute: 0 }, close: { day: 2, hour: 23, minute: 59 } }],
+    }),
+  } as unknown as PlacesService;
+
+  const directions = {
+    routeLeg: async () => ({ durationMin: 4, distanceM: 300, mode: 'WALK' as const, walkingDistanceM: 300 }),
+  } as unknown as DirectionsService;
+
+  const service = new ItinerariesService(placesService, directions, new ScoringService());
+  const result = await service.generateItinerary(req);
+
+  assert.equal(result.status === 'OK' || result.status === 'CONFLICT', true);
+  const doCalls = subgroupCalls.filter((subgroup) => subgroup !== 'COFFEE');
+  assert.equal(doCalls.length <= 6, true);
 });

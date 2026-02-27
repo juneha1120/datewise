@@ -7,7 +7,6 @@ test('GenerateItineraryRequestSchema validates refined payload', () => {
     origin: { placeId: 'abc', name: 'Origin', formattedAddress: 'SG', lat: 1.3, lng: 103.8, types: ['locality'] },
     date: '2026-03-10',
     startTime: '18:30',
-    durationMin: 180,
     budgetLevel: 2,
     radiusMode: 'SHORT_TRANSIT',
     sequence: [{ type: 'CORE', core: 'EAT' }, { type: 'SUBGROUP', subgroup: 'COFFEE' }],

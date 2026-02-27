@@ -16,7 +16,6 @@ test('shared schemas reject invalid itinerary payload', () => {
     origin: { placeId: '', name: 'X', formattedAddress: 'Y', lat: 1, lng: 103, types: [] },
     date: '2026/01/01',
     startTime: '18:30',
-    durationMin: 180,
     budgetLevel: 2,
     radiusMode: 'WALKABLE',
     sequence: [{ type: 'CORE', core: 'EAT' }, { type: 'SUBGROUP', subgroup: 'COFFEE' }],

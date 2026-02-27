@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import {
+  AvoidItem,
   CoreGroup,
   GenerateItineraryRequest,
   GenerateItineraryResult,
@@ -18,9 +19,9 @@ import {
 const radiusModes: RadiusMode[] = ['WALKABLE', 'SHORT_TRANSIT', 'CAR_GRAB'];
 const coreGroups: CoreGroup[] = ['EAT', 'DO', 'SIP'];
 const subgroups: Subgroup[] = [
-  'JAPANESE','KOREAN','CHINESE','THAI','WESTERN','ITALIAN','INDIAN','MALAY','INDONESIAN','VIETNAMESE','MIDDLE_EASTERN','SEAFOOD','LOCAL','HAWKER',
-  'MUSEUM','GALLERY','EXHIBITION','SHOPPING','WELLNESS','CINEMA','CLASSES','WALK_IN_PARK','SCENIC_WALK','ARCADE','BOWLING','KARAOKE','ESCAPE_ROOM','INDOOR_SPORTS','OUTDOOR_ACTIVITY','ATTRACTION',
-  'COFFEE','DESSERT','BUBBLE_TEA','TEA_HOUSE','COCKTAIL','WINE','BEER','SPIRIT',
+  'JAPANESE', 'KOREAN', 'CHINESE', 'THAI', 'WESTERN', 'ITALIAN', 'INDIAN', 'MALAY', 'INDONESIAN', 'VIETNAMESE', 'MIDDLE_EASTERN', 'SEAFOOD', 'LOCAL', 'HAWKER',
+  'MUSEUM', 'GALLERY', 'EXHIBITION', 'SHOPPING', 'WELLNESS', 'CINEMA', 'CLASSES', 'WALK_IN_PARK', 'SCENIC_WALK', 'ARCADE', 'BOWLING', 'KARAOKE', 'ESCAPE_ROOM', 'INDOOR_SPORTS', 'OUTDOOR_ACTIVITY', 'ATTRACTION',
+  'COFFEE', 'DESSERT', 'BUBBLE_TEA', 'TEA_HOUSE', 'COCKTAIL', 'WINE', 'BEER', 'SPIRIT',
 ];
 
 function toFriendlyErrorMessage(prefix: string, error: unknown): string {
@@ -63,6 +64,11 @@ async function postToWebApi(path: string, body: unknown): Promise<unknown> {
   return parsedBody;
 }
 
+function formatTravelRatio(ratio: number | undefined): string {
+  if (typeof ratio !== 'number') return 'n/a';
+  return `${Math.round(ratio * 100)}%`;
+}
+
 export default function HomePage() {
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
@@ -73,7 +79,6 @@ export default function HomePage() {
 
   const [date, setDate] = useState('2026-01-10');
   const [startTime, setStartTime] = useState('18:00');
-  const [durationMin, setDurationMin] = useState('180');
   const [budgetLevel, setBudgetLevel] = useState<1 | 2 | 3>(2);
   const [radiusMode, setRadiusMode] = useState<RadiusMode>('SHORT_TRANSIT');
   const [sequence, setSequence] = useState<SequenceSlot[]>([
@@ -81,7 +86,7 @@ export default function HomePage() {
     { type: 'CORE', core: 'EAT' },
     { type: 'CORE', core: 'SIP' },
   ]);
-  const [avoidSubgroups, setAvoidSubgroups] = useState<Subgroup[]>([]);
+  const [avoidItems, setAvoidItems] = useState<AvoidItem[]>([]);
 
   const [result, setResult] = useState<GenerateItineraryResult | null>(null);
   const [generateError, setGenerateError] = useState<string | null>(null);
@@ -146,10 +151,26 @@ export default function HomePage() {
     setSequence(updated);
   }
 
-  function toggleAvoidSubgroup(value: Subgroup) {
-    setAvoidSubgroups((current) =>
-      current.includes(value) ? current.filter((item) => item !== value) : [...current, value],
-    );
+  function addSlot() {
+    if (sequence.length >= 5) return;
+    setSequence((current) => [...current, { type: 'CORE', core: 'EAT' }]);
+  }
+
+  function removeSlot(index: number) {
+    if (sequence.length <= 2) return;
+    setSequence((current) => current.filter((_, itemIndex) => itemIndex !== index));
+  }
+
+  function isAvoided(item: AvoidItem): boolean {
+    return avoidItems.some((entry) => (item.type === 'CORE' && entry.type === 'CORE' && entry.core === item.core)
+      || (item.type === 'SUBGROUP' && entry.type === 'SUBGROUP' && entry.subgroup === item.subgroup));
+  }
+
+  function toggleAvoidItem(item: AvoidItem) {
+    setAvoidItems((current) => (isAvoided(item)
+      ? current.filter((entry) => !((item.type === 'CORE' && entry.type === 'CORE' && entry.core === item.core)
+        || (item.type === 'SUBGROUP' && entry.type === 'SUBGROUP' && entry.subgroup === item.subgroup)))
+      : [...current, item]));
   }
 
   async function onGenerateItinerary(event: FormEvent<HTMLFormElement>) {
@@ -163,11 +184,10 @@ export default function HomePage() {
       origin: selectedOrigin,
       date,
       startTime,
-      durationMin: Number(durationMin),
       budgetLevel,
       radiusMode,
       sequence,
-      avoid: avoidSubgroups.map((subgroup) => ({ type: 'SUBGROUP', subgroup })),
+      avoid: avoidItems,
     };
 
     try {
@@ -182,9 +202,9 @@ export default function HomePage() {
   }
 
   return (
-    <main style={{ fontFamily: 'sans-serif', padding: '2rem', maxWidth: '48rem' }}>
+    <main style={{ fontFamily: 'sans-serif', padding: '2rem', maxWidth: '60rem' }}>
       <h1>Datewise Web</h1>
-      <p>Refined itinerary generator (core/subgroup sequence + radius mode).</p>
+      <p>Build a sequence-based Singapore date itinerary with travel-aware scheduling.</p>
 
       <label htmlFor="origin-search">Origin search</label>
       <input id="origin-search" type="text" value={query} onChange={(event) => setQuery(event.target.value)} style={{ width: '100%', padding: '0.5rem' }} />
@@ -206,13 +226,11 @@ export default function HomePage() {
         </ul>
       ) : null}
 
-      <form onSubmit={onGenerateItinerary} style={{ marginTop: '1rem' }}>
+      <form onSubmit={onGenerateItinerary} style={{ marginTop: '1rem', display: 'grid', gap: '0.5rem' }}>
         <label>Date</label>
         <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
         <label>Start time</label>
         <input type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} />
-        <label>Duration (min)</label>
-        <input type="number" value={durationMin} onChange={(event) => setDurationMin(event.target.value)} />
 
         <label>Budget level</label>
         <select value={String(budgetLevel)} onChange={(event) => setBudgetLevel(Number(event.target.value) as 1 | 2 | 3)}>
@@ -225,28 +243,46 @@ export default function HomePage() {
         </select>
 
         <fieldset>
-          <legend>Sequence slots</legend>
+          <legend>Sequence slots (2-5)</legend>
           {sequence.map((slot, index) => (
-            <select
-              key={index}
-              value={slot.type === 'CORE' ? `CORE:${slot.core}` : `SUBGROUP:${slot.subgroup}`}
-              onChange={(event) => updateSlot(index, event.target.value)}
-            >
-              {coreGroups.map((core) => <option key={`core-${core}`} value={`CORE:${core}`}>{`CORE: ${core}`}</option>)}
-              {subgroups.map((subgroup) => <option key={`sub-${subgroup}`} value={`SUBGROUP:${subgroup}`}>{`SUBGROUP: ${subgroup}`}</option>)}
-            </select>
+            <div key={index} style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.25rem' }}>
+              <select
+                style={{ flex: 1 }}
+                value={slot.type === 'CORE' ? `CORE:${slot.core}` : `SUBGROUP:${slot.subgroup}`}
+                onChange={(event) => updateSlot(index, event.target.value)}
+              >
+                {coreGroups.map((core) => <option key={`core-${core}`} value={`CORE:${core}`}>{`CORE: ${core}`}</option>)}
+                {subgroups.map((subgroup) => <option key={`sub-${subgroup}`} value={`SUBGROUP:${subgroup}`}>{`SUBGROUP: ${subgroup}`}</option>)}
+              </select>
+              <button type="button" onClick={() => removeSlot(index)} disabled={sequence.length <= 2}>Remove</button>
+            </div>
           ))}
+          <button type="button" onClick={addSlot} disabled={sequence.length >= 5}>Add slot</button>
         </fieldset>
 
         <fieldset>
-          <legend>Avoid subgroups</legend>
-          <div style={{ maxHeight: '150px', overflow: 'auto', border: '1px solid #ddd', padding: '0.25rem' }}>
-            {subgroups.map((subgroup) => (
-              <label key={subgroup} style={{ display: 'block' }}>
-                <input type="checkbox" checked={avoidSubgroups.includes(subgroup)} onChange={() => toggleAvoidSubgroup(subgroup)} />
-                {subgroup}
-              </label>
-            ))}
+          <legend>Avoid panel (core + subgroup)</legend>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+            <div>
+              <h4>Core</h4>
+              {coreGroups.map((core) => (
+                <label key={core} style={{ display: 'block' }}>
+                  <input type="checkbox" checked={isAvoided({ type: 'CORE', core })} onChange={() => toggleAvoidItem({ type: 'CORE', core })} />
+                  {core}
+                </label>
+              ))}
+            </div>
+            <div>
+              <h4>Subgroup</h4>
+              <div style={{ maxHeight: '180px', overflow: 'auto', border: '1px solid #ddd', padding: '0.25rem' }}>
+                {subgroups.map((subgroup) => (
+                  <label key={subgroup} style={{ display: 'block' }}>
+                    <input type="checkbox" checked={isAvoided({ type: 'SUBGROUP', subgroup })} onChange={() => toggleAvoidItem({ type: 'SUBGROUP', subgroup })} />
+                    {subgroup}
+                  </label>
+                ))}
+              </div>
+            </div>
           </div>
         </fieldset>
 
@@ -258,9 +294,23 @@ export default function HomePage() {
         <section>
           <h2>Itinerary</h2>
           <p><strong>ID:</strong> {result.itineraryId}</p>
+          <p><strong>Estimated duration:</strong> {result.totals.durationLabel}</p>
+          <p><strong>Travel share:</strong> {formatTravelRatio(result.meta.travelTimeRatio)}</p>
+
+          <h3>Stops</h3>
           <ul>
             {result.stops.map((stop, index) => (
-              <li key={`${stop.name}-${index}`}>{stop.name} ({stop.subgroup ?? stop.core ?? 'n/a'}) {stop.arrivalTime ? `@ ${stop.arrivalTime}` : ''}</li>
+              <li key={`${stop.name}-${index}`}>
+                {index + 1}. {stop.name} ({stop.subgroup ?? stop.core ?? 'n/a'})
+                {' '}— {stop.arrivalTime ?? 'n/a'} to {stop.departTime ?? 'n/a'}
+              </li>
+            ))}
+          </ul>
+
+          <h3>Legs</h3>
+          <ul>
+            {result.legs.map((leg) => (
+              <li key={`${leg.from}-${leg.to}`}>#{leg.from + 1} → #{leg.to + 1}: {leg.mode} {leg.distanceM}m / {leg.durationMin} min</li>
             ))}
           </ul>
         </section>
