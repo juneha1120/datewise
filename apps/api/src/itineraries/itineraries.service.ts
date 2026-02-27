@@ -26,6 +26,7 @@ const FORBIDDEN_EAT_PRIMARY_TYPES = new Set(['shopping_mall', 'department_store'
 const EAT_NAME_BLOCKLIST = [' mall ', ' plaza ', ' centre ', ' center '];
 
 type SlotPick = { subgroup: Subgroup; place: SlotSearchCandidate; matchConfidence: number; openState: 'OPEN' | 'UNKNOWN' | 'CLOSED'; score: number };
+type EvaluatedLeg = { durationMin: number; distanceM: number; mode: 'WALK' | 'TRANSIT' | 'DRIVE'; walkingDistanceM: number };
 
 const TYPE_MAP: Partial<Record<Subgroup, readonly string[]>> = {
   COFFEE: ['cafe'], DESSERT: ['bakery'], COCKTAIL: ['bar'], WINE: ['bar'], BEER: ['bar'], SPIRIT: ['bar'],
@@ -66,6 +67,8 @@ export class ItinerariesService {
       let best: SlotPick | undefined;
       let foundTooFar = false;
       let foundClosed = false;
+      let foundOverBudget = false;
+      let bestLeg: EvaluatedLeg | undefined;
 
       for (const subgroup of options) {
         const candidates = await this.placesService.searchForSubgroup({
@@ -95,6 +98,12 @@ export class ItinerariesService {
             continue;
           }
 
+          const projectedElapsedMin = elapsedMin + leg.durationMin + subgroupDurationMin(subgroup);
+          if (projectedElapsedMin > request.durationMin) {
+            foundOverBudget = true;
+            continue;
+          }
+
           const distanceScore = clamp(1 - leg.distanceM / (radius.maxLegKm * 1000));
           const qualityScore = clamp(((candidate.rating ?? 3.8) / 5) * 0.7 + Math.min(1, Math.log10((candidate.reviewCount ?? 0) + 1) / 3) * 0.3);
           const budgetFitScore = candidate.priceLevel === undefined ? 0.6 : clamp(1 - Math.abs(candidate.priceLevel - budgetTarget(request.budgetLevel)) / 3);
@@ -102,16 +111,21 @@ export class ItinerariesService {
 
           if (!best || score > best.score) {
             best = { subgroup, place: candidate, matchConfidence, openState, score };
+            bestLeg = leg;
           }
         }
       }
 
       if (!best) {
-        const reason = foundClosed ? 'CLOSED_AT_TIME' : foundTooFar ? 'ONLY_CANDIDATES_TOO_FAR' : 'NO_CANDIDATES_WITHIN_RADIUS';
+        const reason = foundOverBudget ? 'INSUFFICIENT_TIME_FOR_TRAVEL' : foundClosed ? 'CLOSED_AT_TIME' : foundTooFar ? 'ONLY_CANDIDATES_TOO_FAR' : 'NO_CANDIDATES_WITHIN_RADIUS';
         return this.conflict(reason, 'Unable to find a feasible place for slot.', request, i, options[0], avoid);
       }
 
-      const leg = await this.directionsService.routeLeg(nowLatLng, { lat: best.place.lat, lng: best.place.lng }, request.radiusMode);
+      if (!bestLeg) {
+        return this.conflict('NO_CANDIDATES_WITHIN_RADIUS', 'Unable to find a feasible place for slot.', request, i, best.subgroup, avoid);
+      }
+
+      const leg = bestLeg;
       elapsedMin += leg.durationMin;
       totalTravelMin += leg.durationMin;
       walkingDistanceM += leg.walkingDistanceM;
