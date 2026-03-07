@@ -143,6 +143,12 @@ export const ItineraryStopSchema = z.object({
   arrivalTime: TimeSchema.optional(),
   departTime: TimeSchema.optional(),
   matchConfidence: z.number().min(0).max(1).optional(),
+  meta: z
+    .object({
+      matchConfidence: z.number().min(0).max(1).optional(),
+      matchReasons: z.array(z.string().min(1)).max(5).optional(),
+    })
+    .optional(),
 });
 
 export const ItineraryLegSchema = z.object({

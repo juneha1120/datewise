@@ -1,39 +1,41 @@
 import {
+  CoreGroup,
   GenerateItineraryConflictResponse,
   GenerateItineraryRequest,
   GenerateItineraryResponse,
   GenerateItineraryResult,
   ItineraryLeg,
   ItineraryStop,
+  SequenceSlot,
   Subgroup,
 } from '@datewise/shared';
 import { Injectable } from '@nestjs/common';
 
 import { PlaceVerificationDetails, PlacesService, SlotSearchCandidate } from '../places/places.service';
 import { DirectionsService } from './directions.service';
+import { verifyCoreCandidate, verifySubgroupCandidate, VerificationResult } from './membershipVerifier';
+import { avoidToSubgroups, isOpenAtDateTime, openScoreFromState, radiusConfig, resolveSlotSubgroups, similarSuggestions, subgroupDurationMin, SUBGROUP_CORE } from './planner';
 import { ScoringService } from './scoring.service';
-import {
-  SUBGROUP_CORE,
-  SUBGROUP_KEYWORDS,
-  avoidToSubgroups,
-  isOpenAtDateTime,
-  openScoreFromState,
-  radiusConfig,
-  resolveSlotSubgroups,
-  similarSuggestions,
-  subgroupDurationMin,
-} from './planner';
+import { CORE_ANCHORS, PROFILES, RetrievalMode } from './subgroupProfiles';
 
-const FORBIDDEN_EAT_PRIMARY_TYPES = new Set(['shopping_mall', 'department_store', 'tourist_attraction', 'lodging']);
-const EAT_NAME_BLOCKLIST = [' mall ', ' plaza ', ' centre ', ' center '];
 const MAX_SUBGROUP_OPTIONS_PER_SLOT = 6;
-const MAX_CANDIDATES_PER_SUBGROUP = 5;
+const MAX_CANDIDATES_PER_SUBGROUP = 20;
+const MAX_DETAILS_PER_SUBGROUP = 10;
 const MAX_LOOKAHEAD_CURRENT_CHOICES = 3;
 const MAX_LOOKAHEAD_SUBGROUPS = 3;
 const MAX_LOOKAHEAD_CANDIDATES = 3;
 
-type SlotPick = { subgroup: Subgroup; place: SlotSearchCandidate; matchConfidence: number; openState: 'OPEN' | 'UNKNOWN' | 'CLOSED'; score: number };
-type CandidateEvaluation = { subgroup: Subgroup; place: SlotSearchCandidate; matchConfidence: number; openState: 'OPEN' | 'UNKNOWN' | 'CLOSED'; score: number; leg: { durationMin: number; distanceM: number; mode: ItineraryLeg['mode']; walkingDistanceM: number } };
+type SlotPick = {
+  subgroup: Subgroup;
+  place: SlotSearchCandidate;
+  matchConfidence: number;
+  matchReasons: string[];
+  openState: 'OPEN' | 'UNKNOWN' | 'CLOSED';
+  score: number;
+};
+type CandidateEvaluation = SlotPick & {
+  leg: { durationMin: number; distanceM: number; mode: ItineraryLeg['mode']; walkingDistanceM: number };
+};
 
 type ReplaceStopWithTextSearchRequest = {
   originPlaceId: string;
@@ -41,15 +43,6 @@ type ReplaceStopWithTextSearchRequest = {
   query: string;
   itinerary: GenerateItineraryResponse;
 };
-
-const TYPE_MAP: Partial<Record<Subgroup, readonly string[]>> = {
-  COFFEE: ['cafe'], DESSERT: ['bakery'], COCKTAIL: ['bar'], WINE: ['bar'], BEER: ['bar'], SPIRIT: ['bar'],
-  MUSEUM: ['museum'], GALLERY: ['art_gallery'], EXHIBITION: ['art_gallery'], SHOPPING: ['shopping_mall'], WELLNESS: ['spa'], CINEMA: ['movie_theater'], WALK_IN_PARK: ['park'], SCENIC_WALK: ['park'], ARCADE: ['amusement_center'], BOWLING: ['bowling_alley'], INDOOR_SPORTS: ['sports_complex'], OUTDOOR_ACTIVITY: ['park'], ATTRACTION: ['tourist_attraction'],
-  JAPANESE: ['restaurant'], KOREAN: ['restaurant'], CHINESE: ['restaurant'], THAI: ['restaurant'], WESTERN: ['restaurant'], ITALIAN: ['restaurant'], INDIAN: ['restaurant'], MALAY: ['restaurant'], INDONESIAN: ['restaurant'], VIETNAMESE: ['restaurant'], MIDDLE_EASTERN: ['restaurant'], SEAFOOD: ['restaurant'], LOCAL: ['restaurant'], HAWKER: ['restaurant'],
-};
-const TEXT_QUERY_MAP: Partial<Record<Subgroup, string>> = { ESCAPE_ROOM: 'escape room', KARAOKE: 'karaoke', CLASSES: 'classes', TEA_HOUSE: 'tea house', BUBBLE_TEA: 'bubble tea' };
-
-function clamp(v: number): number { return Math.max(0, Math.min(1, v)); }
 
 function addMinutes(time: string, minutesToAdd: number): string {
   const [hour, minute] = time.split(':').map((part) => Number(part));
@@ -65,7 +58,7 @@ export class ItinerariesService {
     private readonly directionsService: DirectionsService,
     private readonly scoringService: ScoringService,
   ) {}
-  
+
   async replaceStopWithTextSearch(request: ReplaceStopWithTextSearchRequest): Promise<GenerateItineraryResponse> {
     const warnings = [...(request.itinerary.meta.warnings ?? [])];
     warnings.push(`replace-stop is deprecated; received query "${request.query}" for stop ${request.stopIndex}. Returning itinerary unchanged.`);
@@ -91,7 +84,8 @@ export class ItinerariesService {
     let walkingDistanceM = 0;
 
     for (let i = 0; i < request.sequence.length; i += 1) {
-      const options = this.limitSlotSubgroups(resolveSlotSubgroups(request.sequence[i], avoid));
+      const slot = request.sequence[i];
+      const options = this.limitSlotSubgroups(resolveSlotSubgroups(slot, avoid));
       if (options.length === 0) return this.conflict('ALL_BLOCKED_BY_AVOID', 'Avoid list removed all candidates for slot.', request, i, undefined, avoid);
 
       let best: CandidateEvaluation | undefined;
@@ -100,13 +94,7 @@ export class ItinerariesService {
       const evaluated: CandidateEvaluation[] = [];
 
       for (const subgroup of options) {
-        const candidates = await this.placesService.searchForSubgroup({
-          origin: nowLatLng,
-          subgroup,
-          maxLegKm: radius.maxLegKm,
-          requiredTypes: TYPE_MAP[subgroup],
-          textQuery: TEXT_QUERY_MAP[subgroup],
-        });
+        const candidates = await this.fetchCandidatesForSubgroup(subgroup, nowLatLng, radius.maxLegKm);
 
         for (const candidate of candidates.slice(0, MAX_CANDIDATES_PER_SUBGROUP)) {
           const leg = await this.directionsService.routeLeg(nowLatLng, { lat: candidate.lat, lng: candidate.lng }, request.radiusMode);
@@ -117,8 +105,8 @@ export class ItinerariesService {
 
           const arrivalTime = addMinutes(request.startTime, elapsedMin + leg.durationMin);
           const details = await this.placesService.placeVerificationDetails(candidate.externalId);
-          const matchConfidence = this.matchConfidence(subgroup, candidate, details);
-          if (matchConfidence < 0.6) continue;
+          const verification = this.verifyForSlot(slot, subgroup, candidate, details);
+          if (!verification.accepted) continue;
 
           const openState = isOpenAtDateTime(details.regularOpeningPeriods, request.date, arrivalTime);
           const openScore = openScoreFromState(openState);
@@ -135,9 +123,18 @@ export class ItinerariesService {
             priceLevel: candidate.priceLevel,
             budgetLevel: request.budgetLevel,
             openScore,
-            matchConfidence,
+            matchConfidence: verification.confidence,
+          }) + 0.1 * verification.confidence;
+
+          evaluated.push({
+            subgroup,
+            place: candidate,
+            matchConfidence: verification.confidence,
+            matchReasons: verification.evidence.reasons,
+            openState,
+            score,
+            leg,
           });
-          evaluated.push({ subgroup, place: candidate, matchConfidence, openState, score, leg });
         }
       }
 
@@ -151,6 +148,7 @@ export class ItinerariesService {
           currentSlotIndex: i,
           nowElapsedMin: elapsedMin,
           nowOptions: evaluated,
+          nextSlot: request.sequence[i + 1],
           nextOptions,
           maxLegKm: radius.maxLegKm,
         });
@@ -206,10 +204,14 @@ export class ItinerariesService {
         arrivalTime,
         departTime,
         matchConfidence: pick.matchConfidence,
+        meta: {
+          matchConfidence: pick.matchConfidence,
+          matchReasons: pick.matchReasons,
+        },
       };
     });
 
-    const response: GenerateItineraryResponse = {
+    return {
       status: 'OK',
       itineraryId: `iti_${request.date}_${request.startTime.replace(':', '')}_${request.origin.placeId}`,
       stops,
@@ -222,28 +224,49 @@ export class ItinerariesService {
         travelTimeRatio: totalDurationMin > 0 ? Number((totalTravelMin / totalDurationMin).toFixed(3)) : 0,
       },
     };
-
-    return response;
   }
 
-  private matchConfidence(subgroup: Subgroup, candidate: SlotSearchCandidate, details: PlaceVerificationDetails): number {
-    const types = new Set([...(candidate.types ?? []), ...details.types].map((type) => type.toLowerCase()));
-    const required = (TYPE_MAP[subgroup] ?? []).map((type) => type.toLowerCase());
-    const requiredHit = required.length === 0 ? 0.7 : required.some((type) => types.has(type)) ? 1 : 0;
+  private verifyForSlot(slot: SequenceSlot, subgroup: Subgroup, candidate: SlotSearchCandidate, details: PlaceVerificationDetails): VerificationResult {
+    const merged = {
+      name: details.name || candidate.name,
+      primaryType: details.primaryType ?? candidate.primaryType,
+      types: [...(candidate.types ?? []), ...details.types],
+      editorialSummary: [candidate.editorialSummary, details.editorialSummary].filter((value): value is string => Boolean(value)).join(' '),
+      reviews: details.reviews,
+    };
 
-    if (SUBGROUP_CORE[subgroup] === 'EAT') {
-      const primary = (details.primaryType ?? candidate.primaryType ?? '').toLowerCase();
-      const normalizedName = ` ${candidate.name.toLowerCase()} ${details.name.toLowerCase()} `;
-      if (FORBIDDEN_EAT_PRIMARY_TYPES.has(primary)) return 0;
-      if (EAT_NAME_BLOCKLIST.some((token) => normalizedName.includes(token))) return 0;
+    if (slot.type === 'SUBGROUP') {
+      return verifySubgroupCandidate(subgroup, merged, PROFILES);
     }
 
-    const keywordPool = `${candidate.name} ${candidate.editorialSummary ?? ''} ${details.editorialSummary ?? ''}`.toLowerCase();
-    const keywords = SUBGROUP_KEYWORDS[subgroup];
-    const keywordMatches = keywords.filter((keyword) => keywordPool.includes(keyword)).length;
-    const keywordScore = keywords.length === 0 ? 0.5 : clamp(keywordMatches / Math.min(2, keywords.length));
+    return verifyCoreCandidate(slot.core, merged, CORE_ANCHORS);
+  }
 
-    return clamp(requiredHit * 0.6 + keywordScore * 0.4);
+  private async fetchCandidatesForSubgroup(subgroup: Subgroup, origin: { lat: number; lng: number }, maxLegKm: number): Promise<SlotSearchCandidate[]> {
+    const profile = PROFILES[subgroup];
+    const mode: RetrievalMode = profile?.retrievalMode ?? 'TEXT';
+    const requests: Promise<SlotSearchCandidate[]>[] = [];
+    const addTypeSearch = (): void => {
+      requests.push(this.placesService.searchForSubgroup({ origin, subgroup, maxLegKm, requiredTypes: profile?.googleTypes ?? profile?.requiredTypesAny ?? ['point_of_interest'] }));
+    };
+    const addTextSearch = (): void => {
+      const textQuery = profile?.textQueries && profile.textQueries.length > 0 ? profile.textQueries[0] : subgroup.toLowerCase().replaceAll('_', ' ');
+      requests.push(this.placesService.searchForSubgroup({ origin, subgroup, maxLegKm, textQuery }));
+    };
+
+    if (mode === 'TYPE') addTypeSearch();
+    if (mode === 'TEXT') addTextSearch();
+    if (mode === 'HYBRID') {
+      addTypeSearch();
+      addTextSearch();
+    }
+
+    const results = (await Promise.all(requests)).flat();
+    const unique = new Map<string, SlotSearchCandidate>();
+    for (const result of results) {
+      if (!unique.has(result.externalId)) unique.set(result.externalId, result);
+    }
+    return [...unique.values()].slice(0, MAX_DETAILS_PER_SUBGROUP);
   }
 
   private async findFirstWithFeasibleNextStop(input: {
@@ -251,10 +274,11 @@ export class ItinerariesService {
     currentSlotIndex: number;
     nowElapsedMin: number;
     nowOptions: CandidateEvaluation[];
+    nextSlot: SequenceSlot;
     nextOptions: Subgroup[];
     maxLegKm: number;
   }): Promise<CandidateEvaluation | undefined> {
-    const { request, nowOptions, nextOptions, maxLegKm, nowElapsedMin } = input;
+    const { request, nowOptions, nextOptions, maxLegKm, nowElapsedMin, nextSlot } = input;
     if (nextOptions.length === 0) return undefined;
 
     for (const current of nowOptions.slice(0, MAX_LOOKAHEAD_CURRENT_CHOICES)) {
@@ -262,13 +286,7 @@ export class ItinerariesService {
       const currentPoint = { lat: current.place.lat, lng: current.place.lng };
 
       for (const nextSubgroup of nextOptions.slice(0, MAX_LOOKAHEAD_SUBGROUPS)) {
-        const nextCandidates = await this.placesService.searchForSubgroup({
-          origin: currentPoint,
-          subgroup: nextSubgroup,
-          maxLegKm,
-          requiredTypes: TYPE_MAP[nextSubgroup],
-          textQuery: TEXT_QUERY_MAP[nextSubgroup],
-        });
+        const nextCandidates = await this.fetchCandidatesForSubgroup(nextSubgroup, currentPoint, maxLegKm);
 
         for (const nextCandidate of nextCandidates.slice(0, MAX_LOOKAHEAD_CANDIDATES)) {
           const nextLeg = await this.directionsService.routeLeg(currentPoint, { lat: nextCandidate.lat, lng: nextCandidate.lng }, request.radiusMode);
@@ -276,7 +294,7 @@ export class ItinerariesService {
 
           const nextArrival = addMinutes(request.startTime, afterCurrentStopMin + nextLeg.durationMin);
           const details = await this.placesService.placeVerificationDetails(nextCandidate.externalId);
-          if (this.matchConfidence(nextSubgroup, nextCandidate, details) < 0.6) continue;
+          if (!this.verifyForSlot(nextSlot, nextSubgroup, nextCandidate, details).accepted) continue;
 
           if (openScoreFromState(isOpenAtDateTime(details.regularOpeningPeriods, request.date, nextArrival)) > 0) {
             return current;

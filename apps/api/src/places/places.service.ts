@@ -175,6 +175,13 @@ const GooglePlaceVerificationSchema = z.object({
   types: z.array(z.string()).default([]),
   primaryType: z.string().optional(),
   editorialSummary: z.object({ text: z.string().min(1) }).optional(),
+  reviews: z
+    .array(
+      z.object({
+        text: z.object({ text: z.string().min(1) }).optional(),
+      }),
+    )
+    .default([]),
   regularOpeningHours: z
     .object({
       periods: z
@@ -201,6 +208,7 @@ export type PlaceVerificationDetails = {
   types: string[];
   name: string;
   editorialSummary?: string;
+  reviews: string[];
   regularOpeningPeriods?: OpeningPeriod[];
 };
 
@@ -643,7 +651,7 @@ export class PlacesService {
     }
 
     const payload = await fetchJsonWithRetry<unknown>(`${GOOGLE_API_BASE}/places/${encodeURIComponent(placeId)}?languageCode=en`, {
-      headers: this.buildJsonHeaders('id,displayName.text,types,primaryType,editorialSummary.text,regularOpeningHours.periods.open.day,regularOpeningHours.periods.open.hour,regularOpeningHours.periods.open.minute,regularOpeningHours.periods.close.day,regularOpeningHours.periods.close.hour,regularOpeningHours.periods.close.minute'),
+      headers: this.buildJsonHeaders('id,displayName.text,types,primaryType,editorialSummary.text,reviews.text.text,regularOpeningHours.periods.open.day,regularOpeningHours.periods.open.hour,regularOpeningHours.periods.open.minute,regularOpeningHours.periods.close.day,regularOpeningHours.periods.close.hour,regularOpeningHours.periods.close.minute'),
     });
 
     const parsed = GooglePlaceVerificationSchema.safeParse(payload);
@@ -664,6 +672,7 @@ export class PlacesService {
       types: parsed.data.types,
       name: parsed.data.displayName?.text ?? '',
       editorialSummary: parsed.data.editorialSummary?.text,
+      reviews: parsed.data.reviews.map((review) => review.text?.text ?? '').filter((text) => text.length > 0),
       regularOpeningPeriods: parsed.data.regularOpeningHours?.periods,
     };
 

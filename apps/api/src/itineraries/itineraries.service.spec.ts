@@ -97,10 +97,10 @@ test('itinerary generation rejects non-relevant text-search candidates and mall 
   };
 
   const detailMap: Record<string, PlaceVerificationDetails> = {
-    'bad-escape': { placeId: 'bad-escape', name: 'Puzzle Cafe', types: ['cafe'], regularOpeningPeriods: [{ open: { day: 2, hour: 8, minute: 0 }, close: { day: 2, hour: 23, minute: 0 } }] },
-    'good-escape': { placeId: 'good-escape', name: 'Escape Room Operator', types: ['point_of_interest'], editorialSummary: 'Popular escape room in Singapore', regularOpeningPeriods: [{ open: { day: 2, hour: 10, minute: 0 }, close: { day: 2, hour: 23, minute: 0 } }] },
-    'mall-collision': { placeId: 'mall-collision', name: 'Mega Mall', primaryType: 'shopping_mall', types: ['restaurant', 'shopping_mall'], regularOpeningPeriods: [{ open: { day: 2, hour: 10, minute: 0 }, close: { day: 2, hour: 23, minute: 0 } }] },
-    'proper-restaurant': { placeId: 'proper-restaurant', name: 'Sushi Place', primaryType: 'restaurant', types: ['restaurant'], editorialSummary: 'Japanese sushi restaurant', regularOpeningPeriods: [{ open: { day: 2, hour: 10, minute: 0 }, close: { day: 2, hour: 23, minute: 0 } }] },
+    'bad-escape': { placeId: 'bad-escape', name: 'Puzzle Cafe', types: ['cafe'], reviews: [], regularOpeningPeriods: [{ open: { day: 2, hour: 8, minute: 0 }, close: { day: 2, hour: 23, minute: 0 } }] },
+    'good-escape': { placeId: 'good-escape', name: 'Escape Room Operator', types: ['point_of_interest'], editorialSummary: 'Popular escape room in Singapore', reviews: ['Great escape room puzzles'], regularOpeningPeriods: [{ open: { day: 2, hour: 10, minute: 0 }, close: { day: 2, hour: 23, minute: 0 } }] },
+    'mall-collision': { placeId: 'mall-collision', name: 'Mega Mall', primaryType: 'shopping_mall', types: ['restaurant', 'shopping_mall'], reviews: [], regularOpeningPeriods: [{ open: { day: 2, hour: 10, minute: 0 }, close: { day: 2, hour: 23, minute: 0 } }] },
+    'proper-restaurant': { placeId: 'proper-restaurant', name: 'Sushi Place', primaryType: 'restaurant', types: ['restaurant'], editorialSummary: 'Japanese sushi restaurant', reviews: ['Excellent sushi'], regularOpeningPeriods: [{ open: { day: 2, hour: 10, minute: 0 }, close: { day: 2, hour: 23, minute: 0 } }] },
   };
 
   const placesService = {
@@ -136,9 +136,9 @@ test('itinerary generation avoids current stop choices that make next stop close
   };
 
   const detailMap: Record<string, PlaceVerificationDetails> = {
-    'coffee-bad': { placeId: 'coffee-bad', name: 'Late Coffee', primaryType: 'cafe', types: ['cafe'], editorialSummary: 'specialty coffee', regularOpeningPeriods: [{ open: { day: 2, hour: 8, minute: 0 }, close: { day: 2, hour: 23, minute: 0 } }] },
-    'coffee-good': { placeId: 'coffee-good', name: 'Quick Coffee', primaryType: 'cafe', types: ['cafe'], editorialSummary: 'specialty coffee', regularOpeningPeriods: [{ open: { day: 2, hour: 8, minute: 0 }, close: { day: 2, hour: 23, minute: 0 } }] },
-    'dessert-only': { placeId: 'dessert-only', name: 'Dessert Bar', primaryType: 'bakery', types: ['bakery'], editorialSummary: 'dessert and pastry', regularOpeningPeriods: [{ open: { day: 2, hour: 11, minute: 0 }, close: { day: 2, hour: 12, minute: 20 } }] },
+    'coffee-bad': { placeId: 'coffee-bad', name: 'Late Coffee', primaryType: 'cafe', types: ['cafe'], editorialSummary: 'specialty coffee', reviews: [], regularOpeningPeriods: [{ open: { day: 2, hour: 8, minute: 0 }, close: { day: 2, hour: 23, minute: 0 } }] },
+    'coffee-good': { placeId: 'coffee-good', name: 'Quick Coffee', primaryType: 'cafe', types: ['cafe'], editorialSummary: 'specialty coffee', reviews: [], regularOpeningPeriods: [{ open: { day: 2, hour: 8, minute: 0 }, close: { day: 2, hour: 23, minute: 0 } }] },
+    'dessert-only': { placeId: 'dessert-only', name: 'Dessert Bar', primaryType: 'bakery', types: ['bakery'], editorialSummary: 'dessert and pastry', reviews: ['Great dessert'], regularOpeningPeriods: [{ open: { day: 2, hour: 11, minute: 0 }, close: { day: 2, hour: 12, minute: 20 } }] },
   };
 
   const placesService = {
@@ -182,7 +182,7 @@ test('itinerary generation limits subgroup fanout to reduce external API usage',
       name: placeId,
       types: ['point_of_interest', 'cafe'],
       editorialSummary: 'museum attraction coffee',
-      regularOpeningPeriods: [{ open: { day: 2, hour: 0, minute: 0 }, close: { day: 2, hour: 23, minute: 59 } }],
+      reviews: [], regularOpeningPeriods: [{ open: { day: 2, hour: 0, minute: 0 }, close: { day: 2, hour: 23, minute: 59 } }],
     }),
   } as unknown as PlacesService;
 
