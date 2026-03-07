@@ -1,21 +1,14 @@
 {
   "name": "@datewise/shared",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "commonjs",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "require": "./dist/index.js",
-      "default": "./dist/index.js"
-    }
-  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit",
-    "test": "tsc -p tsconfig.json && node --test \"dist/**/*.spec.js\""
+    "test": "npm run build && node --test \"dist/**/*.spec.js\""
   },
   "dependencies": {
     "zod": "^3.23.8"

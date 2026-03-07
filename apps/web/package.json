@@ -1,15 +1,15 @@
 {
   "name": "@datewise/web",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "npm run build --workspace @datewise/shared && next dev",
+    "build": "npm run build --workspace @datewise/shared && next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "npm run build --workspace @datewise/shared && tsc --noEmit"
   },
   "dependencies": {
-    "@datewise/shared": "0.1.0",
+    "@datewise/shared": "1.0.0",
     "next": "^15.5.12",
     "react": "18.3.1",
     "react-dom": "18.3.1"
