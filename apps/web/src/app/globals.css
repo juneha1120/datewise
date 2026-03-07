@@ -1,0 +1,5 @@
+:root { color-scheme: dark; }
+* { box-sizing: border-box; }
+body { margin: 0; background: #020617; color: #e2e8f0; font-family: Inter, system-ui, sans-serif; }
+input, select, button { border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: #e2e8f0; padding: 10px 12px; }
+button { cursor: pointer; }

@@ -1,34 +1,36 @@
-# Datewise (Singapore-only V1)
+# Datewise MVP
 
-Datewise generates a curated date itinerary (2–4 stops) for couples in Singapore based on start MRT/area, time window, walking tolerance, budget, date style, and vibe. It integrates Google Places for origin lookup and venue search, plus Eventbrite for events.
+Datewise is a Singapore-only itinerary generator. This repository is organized as:
 
-## Tech Stack
-- Web: Next.js + TypeScript + Tailwind + shadcn/ui + TanStack Query
-- API: NestJS + TypeScript + Prisma
-- Data: Postgres (persistence), Redis (cache + rate limiting)
+- `apps/web`: Next.js web client
+- `apps/api`: NestJS API
+- `packages/shared`: shared taxonomy, validation schemas, and conflict helpers
 
-## External APIs
-- Google Places API (origin autocomplete + place details; Singapore-only filter)
-- Google Directions API (routing + walking distance)
-- Google Geocoding API (MRT/area to lat/lng when needed)
-- Eventbrite API (events near coordinates + time window)
+## Quick start
 
-## Local Setup
-1) Copy env:
-   - cp .env.example .env
-2) Start dependencies (recommended):
-   - docker compose up -d (or run Postgres + Redis locally)
-3) Install:
-   - npm install
-4) Run:
-   - npm run dev
+1. Install dependencies:
+   ```bash
+   npm install
+   ```
+2. Copy envs:
+   ```bash
+   cp .env.example .env
+   ```
+3. Run API and web:
+   ```bash
+   npm run dev
+   ```
 
-## Docs
-See /docs for product, requirements, API, scoring, data model, and runbook.
+## Scripts
 
-## Security
-All external API keys are backend-only. Frontend never calls external APIs directly.
+- `npm run dev`
+- `npm run build`
+- `npm run typecheck`
+- `npm run test`
 
+## MVP notes
 
-## Environment
-- `GOOGLE_MAPS_API_KEY` is required for `/v1/places/autocomplete` and `/v1/places/details` (API only; never expose it to the web app).
+- Google OAuth is implemented as backend contract endpoint (`/auth/google`) that accepts a verified profile payload.
+- Place search is deterministic provider scaffolding to keep generator behavior stable and testable.
+- `apps/api/prisma/schema.prisma` is included as the target PostgreSQL data model for production persistence.
+- Current runtime persistence in the API is in-memory (`apps/api/src/db.ts`) for local MVP iteration.

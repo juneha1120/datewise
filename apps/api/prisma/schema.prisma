@@ -1,0 +1,64 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String      @id @default(cuid())
+  email        String      @unique
+  displayName  String
+  profileImage String?
+  authProvider String      @default("EMAIL")
+  passwordHash String?
+  itineraries  Itinerary[]
+  saves        SavedItinerary[]
+  createdAt    DateTime    @default(now())
+}
+
+model Itinerary {
+  id         String          @id @default(cuid())
+  userId     String
+  user       User            @relation(fields: [userId], references: [id])
+  title      String
+  isPublic   Boolean         @default(false)
+  inputJson  String
+  edited     Boolean         @default(false)
+  sourceId   String?
+  source     Itinerary?      @relation("CloneSource", fields: [sourceId], references: [id])
+  clones     Itinerary[]     @relation("CloneSource")
+  slots      ItinerarySlot[]
+  savedBy    SavedItinerary[]
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+}
+
+model ItinerarySlot {
+  id            String    @id @default(cuid())
+  itineraryId   String
+  itinerary     Itinerary @relation(fields: [itineraryId], references: [id], onDelete: Cascade)
+  slotIndex     Int
+  selection     String
+  subgroup      String
+  placeName     String
+  travelMinutes Int
+  startOffsetMin Int
+  durationMin   Int
+  metadataJson  String
+}
+
+model SavedItinerary {
+  id          String    @id @default(cuid())
+  userId      String
+  itineraryId String
+  snapshotJson String
+  sourceUserId String?
+  user        User      @relation(fields: [userId], references: [id])
+  itinerary   Itinerary @relation(fields: [itineraryId], references: [id])
+  createdAt   DateTime  @default(now())
+
+  @@unique([userId, itineraryId])
+}
