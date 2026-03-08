@@ -104,6 +104,7 @@ export class AuthService {
       user.profileImage = googleProfile.profileImage;
       user.provider = 'GOOGLE';
     }
+
     db.users.set(user.id, user);
     return { token: tokenFor(user, this.jwtSecret()), user };
   }
