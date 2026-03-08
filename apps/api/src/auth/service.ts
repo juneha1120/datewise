@@ -1,235 +1,141 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, InternalServerErrorException, UnauthorizedException } from '@nestjs/common';
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { db, type User } from '../db';
 
 export type AuthUser = { id: string; email: string; displayName: string; profileImage: string | null };
 
-const AUTH_TOKEN_SECRET = process.env.AUTH_TOKEN_SECRET ?? 'datewise-dev-auth-secret';
-const AUTH_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 7;
-const GOOGLE_TOKENINFO_URL = 'https://oauth2.googleapis.com/tokeninfo';
-const GOOGLE_TOKEN_ISSUERS = new Set(['accounts.google.com', 'https://accounts.google.com']);
-
-type TokenPayload = { sub: string; email: string; exp: number };
+const ACCESS_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 7;
 
 type GoogleTokenInfo = {
-  sub?: string;
+  aud?: string;
   email?: string;
-  email_verified?: 'true' | 'false' | boolean;
+  email_verified?: string;
   name?: string;
   picture?: string;
-  iss?: string;
 };
 
-function signatureFor(payloadBase64: string) {
-  return createHmac('sha256', AUTH_TOKEN_SECRET).update(payloadBase64).digest('base64url');
+function encodeJwtPart(value: object) {
+  return Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
 }
 
-function tokenFor(user: User) {
-  const payloadBase64 = Buffer.from(JSON.stringify({
+function timingSafeEqualString(left: string, right: string) {
+  const leftBuffer = Buffer.from(left, 'utf8');
+  const rightBuffer = Buffer.from(right, 'utf8');
+  if (leftBuffer.length !== rightBuffer.length) return false;
+  return timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function tokenFor(user: User, secret: string) {
+  const header = encodeJwtPart({ alg: 'HS256', typ: 'JWT' });
+  const payload = encodeJwtPart({
     sub: user.id,
     email: user.email,
-    exp: Math.floor(Date.now() / 1000) + AUTH_TOKEN_TTL_SECONDS,
-  } satisfies TokenPayload)).toString('base64url');
-  return `${payloadBase64}.${signatureFor(payloadBase64)}`;
-}
-
-function payloadFromToken(token: string): TokenPayload {
-  const [payloadBase64, signature] = token.split('.');
-  if (!payloadBase64 || !signature) throw new UnauthorizedException('Invalid token');
-  const expectedSignature = signatureFor(payloadBase64);
-  const providedSignature = Buffer.from(signature);
-  const expectedSignatureBuffer = Buffer.from(expectedSignature);
-  if (providedSignature.length !== expectedSignatureBuffer.length) {
-    throw new UnauthorizedException('Invalid token');
-  }
-  const signatureOk = timingSafeEqual(providedSignature, expectedSignatureBuffer);
-  if (!signatureOk) throw new UnauthorizedException('Invalid token');
-
-  let payload: TokenPayload;
-  try {
-    payload = JSON.parse(Buffer.from(payloadBase64, 'base64url').toString()) as TokenPayload;
-  } catch {
-    throw new UnauthorizedException('Invalid token');
-  }
-  if (!payload.sub || !payload.exp || payload.exp <= Math.floor(Date.now() / 1000)) {
-    throw new UnauthorizedException('Invalid token');
-  }
-  return payload;
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + ACCESS_TOKEN_TTL_SECONDS,
+  });
+  const signingInput = `${header}.${payload}`;
+  const signature = createHmac('sha256', secret).update(signingInput).digest('base64url');
+  return `${signingInput}.${signature}`;
 }
 
 @Injectable()
 export class AuthService {
-  private readonly tokenSecret: string;
-
-  constructor(private readonly fetchImpl: typeof fetch = defaultFetch) {
-    this.tokenSecret = process.env.AUTH_TOKEN_SECRET ?? 'datewise-dev-auth-secret';
+  private jwtSecret() {
+    const secret = process.env.JWT_SECRET;
+    if (!secret) throw new InternalServerErrorException('JWT_SECRET is required');
+    return secret;
   }
 
-  private sign(payloadBase64: string): string {
-    return createHmac('sha256', this.tokenSecret).update(payloadBase64).digest('base64url');
-  }
+  private async verifyGoogleIdentity(idToken: string): Promise<Required<Pick<User, 'email' | 'displayName' | 'profileImage'>>> {
+    const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
+    if (!clientId) throw new InternalServerErrorException('GOOGLE_OAUTH_CLIENT_ID is required');
 
-  private tokenFor(user: User): string {
-    const payload: TokenPayload = {
-      sub: user.id,
-      email: user.email,
-      exp: Math.floor(Date.now() / 1000) + TOKEN_TTL_SECONDS,
+    const response = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`);
+    if (!response.ok) throw new UnauthorizedException('Invalid Google token');
+    const tokenInfo = (await response.json()) as GoogleTokenInfo;
+    if (!tokenInfo.email || tokenInfo.email_verified !== 'true') {
+      throw new UnauthorizedException('Google account email must be verified');
+    }
+    if (!tokenInfo.aud || !timingSafeEqualString(tokenInfo.aud, clientId)) {
+      throw new UnauthorizedException('Google token audience mismatch');
+    }
+    return {
+      email: tokenInfo.email,
+      displayName: tokenInfo.name ?? tokenInfo.email,
+      profileImage: tokenInfo.picture ?? null,
     };
-    const payloadBase64 = base64UrlEncode(JSON.stringify(payload));
-    const signature = this.sign(payloadBase64);
-    return `${payloadBase64}.${signature}`;
-  }
-
-  private parseToken(token: string): TokenPayload {
-    const [payloadBase64, signature] = token.split('.');
-    if (!payloadBase64 || !signature) {
-      throw new UnauthorizedException('Invalid token');
-    }
-
-    const expectedSignature = this.sign(payloadBase64);
-    const isValidSignature = expectedSignature.length === signature.length && timingSafeEqual(Buffer.from(expectedSignature), Buffer.from(signature));
-    if (!isValidSignature) {
-      throw new UnauthorizedException('Invalid token');
-    }
-
-    let payload: TokenPayload;
-    try {
-      payload = z.object({ sub: z.string().min(1), email: z.string().email(), exp: z.number().int().positive() }).parse(JSON.parse(base64UrlDecode(payloadBase64)));
-    } catch {
-      throw new UnauthorizedException('Invalid token');
-    }
-
-    if (payload.exp < Math.floor(Date.now() / 1000)) {
-      throw new UnauthorizedException('Token expired');
-    }
-
-    return payload;
-  }
-
-  private async verifyGoogleIdentity(idToken: string): Promise<GoogleIdentity> {
-    for (let attempt = 0; attempt <= TOKEN_MAX_RETRIES; attempt += 1) {
-      try {
-        const response = await this.fetchImpl(`${GOOGLE_TOKEN_INFO_URL}?id_token=${encodeURIComponent(idToken)}`, {
-          signal: AbortSignal.timeout(TOKEN_TIMEOUT_MS),
-        });
-
-        if (!response.ok) {
-          throw new UnauthorizedException({ code: 'GOOGLE_TOKEN_INVALID', message: 'Unable to validate Google token' });
-        }
-
-        const parsed = googleTokenInfoSchema.parse(await response.json());
-        const isVerifiedEmail = parsed.email_verified === true || parsed.email_verified === 'true';
-        if (!isVerifiedEmail) {
-          throw new UnauthorizedException({ code: 'GOOGLE_EMAIL_UNVERIFIED', message: 'Google account email is not verified' });
-        }
-
-        const requiredAudience = process.env.GOOGLE_CLIENT_ID;
-        if (requiredAudience && parsed.aud !== requiredAudience) {
-          throw new UnauthorizedException({ code: 'GOOGLE_TOKEN_AUDIENCE_MISMATCH', message: 'Google token audience mismatch' });
-        }
-
-        return {
-          email: parsed.email,
-          displayName: parsed.name ?? parsed.email.split('@')[0],
-          profileImage: parsed.picture ?? null,
-        };
-      } catch (error) {
-        if (error instanceof UnauthorizedException) throw error;
-        if (attempt === TOKEN_MAX_RETRIES) {
-          throw new UnauthorizedException({ code: 'GOOGLE_TOKEN_VERIFICATION_FAILED', message: 'Google identity verification failed' });
-        }
-      }
-    }
-
-    throw new UnauthorizedException({ code: 'GOOGLE_TOKEN_VERIFICATION_FAILED', message: 'Google identity verification failed' });
   }
 
   async signup(input: { email: string; password: string; displayName: string }) {
     const existing = [...db.users.values()].find((user) => user.email === input.email);
     if (existing) throw new UnauthorizedException('Email already registered');
-    const user: User = { id: randomUUID(), email: input.email, displayName: input.displayName, profileImage: null, password: createHash('sha256').update(input.password).digest('hex'), provider: 'EMAIL' };
+    const user: User = {
+      id: randomUUID(),
+      email: input.email,
+      displayName: input.displayName,
+      profileImage: null,
+      password: createHash('sha256').update(input.password).digest('hex'),
+      provider: 'EMAIL',
+    };
     db.users.set(user.id, user);
-    return { token: this.tokenFor(user), user };
+    return { token: tokenFor(user, this.jwtSecret()), user };
   }
 
   async login(input: { email: string; password: string }) {
     const user = [...db.users.values()].find((entry) => entry.email === input.email && entry.provider === 'EMAIL');
     const passwordHash = createHash('sha256').update(input.password).digest('hex');
     if (!user || user.password !== passwordHash) throw new UnauthorizedException('Invalid credentials');
-    return { token: this.tokenFor(user), user };
+    return { token: tokenFor(user, this.jwtSecret()), user };
   }
 
   async googleLogin(input: { idToken: string }) {
-    const googleUser = await this.verifyGoogleIdentity(input.idToken);
-    let user = [...db.users.values()].find((entry) => entry.email === googleUser.email);
+    const googleProfile = await this.verifyGoogleIdentity(input.idToken);
+    let user = [...db.users.values()].find((entry) => entry.email === googleProfile.email);
     if (!user) {
       user = {
         id: randomUUID(),
-        email: googleUser.email,
-        displayName: googleUser.displayName,
-        profileImage: googleUser.profileImage,
+        email: googleProfile.email,
+        displayName: googleProfile.displayName,
+        profileImage: googleProfile.profileImage,
         provider: 'GOOGLE',
       };
     } else {
-      if (user.provider !== 'GOOGLE') {
-        throw new UnauthorizedException('Email already registered with password login');
-      }
-      user.displayName = googleUser.displayName;
-      user.profileImage = googleUser.profileImage ?? user.profileImage;
+      user.displayName = googleProfile.displayName;
+      user.profileImage = googleProfile.profileImage;
+      user.provider = 'GOOGLE';
     }
 
     db.users.set(user.id, user);
-    return { token: this.tokenFor(user), user };
+    return { token: tokenFor(user, this.jwtSecret()), user };
   }
 
   async getMe(token: string): Promise<AuthUser> {
-    const payload = payloadFromToken(token);
-    const user = db.users.get(payload.sub);
+    const [header, payload, signature] = token.split('.');
+    if (!header || !payload || !signature) throw new UnauthorizedException('Invalid token');
+
+    const signingInput = `${header}.${payload}`;
+    const expectedSignature = createHmac('sha256', this.jwtSecret()).update(signingInput).digest('base64url');
+    if (!timingSafeEqualString(signature, expectedSignature)) throw new UnauthorizedException('Invalid token');
+
+    let decoded: { sub?: string; exp?: number };
+    try {
+      decoded = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as { sub?: string; exp?: number };
+    } catch {
+      throw new UnauthorizedException('Invalid token');
+    }
+    if (!decoded.sub || !decoded.exp || decoded.exp <= Math.floor(Date.now() / 1000)) {
+      throw new UnauthorizedException('Invalid token');
+    }
+
+    const user = db.users.get(decoded.sub);
     if (!user) throw new UnauthorizedException('Invalid token');
     return { id: user.id, email: user.email, displayName: user.displayName, profileImage: user.profileImage };
   }
 
-  private async verifyGoogleIdentity(idToken: string): Promise<{ email: string; displayName: string; profileImage: string | null }> {
-    const response = await this.fetchGoogleTokenInfo(idToken);
-    const emailVerified = response.email_verified === true || response.email_verified === 'true';
-    if (!response.sub || !response.email || !emailVerified || !response.iss || !GOOGLE_TOKEN_ISSUERS.has(response.iss)) {
-      throw new UnauthorizedException('Google identity verification failed');
-    }
-    return {
-      email: response.email,
-      displayName: response.name ?? response.email,
-      profileImage: response.picture ?? null,
-    };
-  }
-
-  private async fetchGoogleTokenInfo(idToken: string): Promise<GoogleTokenInfo> {
-    const url = `${GOOGLE_TOKENINFO_URL}?id_token=${encodeURIComponent(idToken)}`;
-    let lastError: Error | undefined;
-
-    for (let attempt = 0; attempt <= 2; attempt += 1) {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000);
-      try {
-        const response = await fetch(url, { signal: controller.signal });
-        if (response.ok) {
-          return await response.json() as GoogleTokenInfo;
-        }
-        if (response.status >= 400 && response.status < 500) {
-          throw new UnauthorizedException('Google identity verification failed');
-        }
-        lastError = new Error(`GOOGLE_TOKENINFO_HTTP_${response.status}`);
-      } catch (error) {
-        if (error instanceof UnauthorizedException) throw error;
-        if (error instanceof Error) {
-          lastError = new Error(error.name === 'AbortError' ? 'GOOGLE_TOKENINFO_TIMEOUT' : `GOOGLE_TOKENINFO_NETWORK_${error.message}`);
-        } else {
-          lastError = new Error('GOOGLE_TOKENINFO_UNKNOWN');
-        }
-      } finally {
-        clearTimeout(timeout);
-      }
-    }
-
-    throw new UnauthorizedException(`Google identity verification unavailable: ${lastError?.message ?? 'GOOGLE_TOKENINFO_FAILED'}`);
+  async profile(token: string) {
+    const me = await this.getMe(token);
+    const mine = [...db.itineraries.values()].filter((entry) => entry.userId === me.id);
+    const saved = [...db.saved.values()].filter((entry) => entry.userId === me.id);
+    return { user: me, itineraries: mine, saved };
   }
 }

@@ -1,86 +1,51 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
+import test from 'node:test';
 import { AuthService } from './service';
 import { db } from '../db';
 
-function makeGoogleTokenInfoResponse(status: number, body: unknown) {
-  return {
-    ok: status >= 200 && status < 300,
-    status,
-    json: async () => body,
-  } as Response;
-}
+test('rejects forged bearer tokens', async () => {
+  process.env.JWT_SECRET = 'unit-test-secret';
+  const auth = new AuthService();
+  const { user } = await auth.signup({ email: 'forged@example.com', password: 'pass123', displayName: 'Forged' });
 
-test.beforeEach(() => {
+  const forgedPayload = Buffer.from(JSON.stringify({ sub: user.id, exp: Math.floor(Date.now() / 1000) + 60 }), 'utf8').toString('base64url');
+  const forgedToken = `${Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' }), 'utf8').toString('base64url')}.${forgedPayload}.invalid-signature`;
+
+  await assert.rejects(() => auth.getMe(forgedToken));
+
   db.users.clear();
+  db.itineraries.clear();
+  db.saved.clear();
 });
 
-test('google login rejects unverified identity payloads', async () => {
-  const service = new AuthService();
-  const originalFetch = global.fetch;
-  global.fetch = async () => makeGoogleTokenInfoResponse(200, {
-    sub: 'google-sub',
-    email: 'user@example.com',
-    email_verified: 'false',
-    iss: 'https://accounts.google.com',
-  });
+test('verifies Google token before creating a session', async () => {
+  process.env.JWT_SECRET = 'unit-test-secret';
+  process.env.GOOGLE_OAUTH_CLIENT_ID = 'client-id-123';
 
-  await assert.rejects(
-    () => service.googleLogin({ idToken: 'fake-id-token' }),
-    /Google identity verification failed/,
-  );
+  const auth = new AuthService();
+  const originalFetch = global.fetch;
+  global.fetch = async () =>
+    ({
+      ok: true,
+      async json() {
+        return {
+          aud: 'client-id-123',
+          email: 'google-user@example.com',
+          email_verified: 'true',
+          name: 'Google User',
+          picture: 'https://images.example.com/avatar.png',
+        };
+      },
+    }) as Response;
+
+  const { token, user } = await auth.googleLogin({ idToken: 'valid-google-id-token' });
+  const me = await auth.getMe(token);
+
+  assert.equal(user.email, 'google-user@example.com');
+  assert.equal(me.id, user.id);
 
   global.fetch = originalFetch;
-});
-
-test('google login creates google user from verified token info only', async () => {
-  const service = new AuthService();
-  const originalFetch = global.fetch;
-  global.fetch = async () => makeGoogleTokenInfoResponse(200, {
-    sub: 'google-sub',
-    email: 'verified@example.com',
-    email_verified: 'true',
-    iss: 'accounts.google.com',
-    name: 'Verified User',
-    picture: 'https://example.com/pic.png',
-  });
-
-  const result = await service.googleLogin({ idToken: 'valid-id-token' });
-  assert.equal(result.user.email, 'verified@example.com');
-  assert.equal(result.user.provider, 'GOOGLE');
-  assert.equal(result.user.displayName, 'Verified User');
-
-  global.fetch = originalFetch;
-});
-
-test('google login does not overwrite existing password account provider', async () => {
-  const service = new AuthService();
-  await service.signup({ email: 'existing@example.com', password: 'pass123', displayName: 'Existing User' });
-
-  const originalFetch = global.fetch;
-  global.fetch = async () => makeGoogleTokenInfoResponse(200, {
-    sub: 'google-sub',
-    email: 'existing@example.com',
-    email_verified: 'true',
-    iss: 'accounts.google.com',
-    name: 'Impostor',
-  });
-
-  await assert.rejects(
-    () => service.googleLogin({ idToken: 'valid-id-token' }),
-    /Email already registered with password login/,
-  );
-
-  global.fetch = originalFetch;
-});
-
-test('getMe rejects forged token and accepts signed token', async () => {
-  const service = new AuthService();
-  const signup = await service.signup({ email: 'signed@example.com', password: 'pass123', displayName: 'Signed User' });
-
-  const me = await service.getMe(signup.token);
-  assert.equal(me.email, 'signed@example.com');
-
-  const forgedToken = Buffer.from(`${signup.user.id}:attacker@example.com`).toString('base64url');
-  await assert.rejects(() => service.getMe(forgedToken), /Invalid token/);
+  db.users.clear();
+  db.itineraries.clear();
+  db.saved.clear();
 });

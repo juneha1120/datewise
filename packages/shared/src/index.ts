@@ -19,11 +19,7 @@ const subgroupToCore = Object.entries(SUBGROUPS).reduce<Record<string, CoreGroup
   return acc;
 }, {});
 
-export const DURATION_BY_CORE: Record<CoreGroup, number> = {
-  EAT: 90,
-  DO: 120,
-  SIP: 90,
-};
+export const DURATION_BY_CORE: Record<CoreGroup, number> = { EAT: 90, DO: 120, SIP: 90 };
 
 export function isCoreGroup(input: string): input is CoreGroup {
   return CORE_GROUPS.includes(input as CoreGroup);
@@ -38,8 +34,7 @@ export function resolveCore(selection: SlotSelection): CoreGroup {
 }
 
 export function expandSelection(selection: SlotSelection): Subgroup[] {
-  if (isSubgroup(selection)) return [selection];
-  return [...SUBGROUPS[selection]];
+  return isSubgroup(selection) ? [selection] : [...SUBGROUPS[selection]];
 }
 
 export function detectConflict(includeSlots: SlotSelection[], avoidSlots: SlotSelection[]): string[] {
@@ -50,16 +45,30 @@ export function detectConflict(includeSlots: SlotSelection[], avoidSlots: SlotSe
     .map(({ idx }) => `includeSlots[${idx}] conflicts with avoid slots`);
 }
 
-export const generateItinerarySchema = z.object({
-  start: z.object({
-    label: z.string().min(1),
-    lat: z.number(),
-    lng: z.number(),
-  }),
+const slotSelectionSchema = z.string().refine((value) => isCoreGroup(value) || isSubgroup(value), 'Invalid slot selection') as z.ZodType<SlotSelection>;
+
+export const generateItinerarySchema = z
+  .object({
+    start: z.object({ label: z.string().min(1), lat: z.number(), lng: z.number() }),
+    date: z.string().min(1),
+    time: z.string().min(1),
+    includeSlots: z.array(slotSelectionSchema).min(2).max(4),
+    avoidSlots: z.array(slotSelectionSchema).default([]),
+  })
+  .superRefine((input, ctx) => {
+    const conflicts = detectConflict(input.includeSlots, input.avoidSlots);
+    conflicts.forEach((message) => ctx.addIssue({ code: z.ZodIssueCode.custom, message }));
+  });
+
+export const regenerateSlotSchema = z.object({
+  start: z.object({ label: z.string().min(1), lat: z.number(), lng: z.number() }),
   date: z.string().min(1),
   time: z.string().min(1),
-  includeSlots: z.array(z.string()).min(2).max(4).refine((values) => values.every((value) => isCoreGroup(value) || isSubgroup(value)), 'Invalid slot selection'),
-  avoidSlots: z.array(z.string()).default([]).refine((values) => values.every((value) => isCoreGroup(value) || isSubgroup(value)), 'Invalid avoid selection'),
+  includeSlots: z.array(slotSelectionSchema).min(2).max(4),
+  avoidSlots: z.array(slotSelectionSchema).default([]),
+  slotIndex: z.number().int().min(0),
+  existingPlaceNames: z.array(z.string()).default([]),
 });
 
 export type GenerateItineraryInput = z.infer<typeof generateItinerarySchema>;
+export type RegenerateSlotInput = z.infer<typeof regenerateSlotSchema>;

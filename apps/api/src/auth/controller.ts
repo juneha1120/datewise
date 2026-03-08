@@ -26,4 +26,11 @@ export class AuthController {
     if (!token) throw new UnauthorizedException();
     return this.authService.getMe(token);
   }
+
+  @Get('profile')
+  profile(@Headers('authorization') authorization?: string) {
+    const token = authorization?.replace('Bearer ', '');
+    if (!token) throw new UnauthorizedException();
+    return this.authService.profile(token);
+  }
 }

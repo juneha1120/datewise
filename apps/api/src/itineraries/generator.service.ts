@@ -1,14 +1,38 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { DURATION_BY_CORE, GenerateItineraryInput, detectConflict, expandSelection, generateItinerarySchema, resolveCore } from '@datewise/shared';
+import { DURATION_BY_CORE, GenerateItineraryInput, RegenerateSlotInput, detectConflict, expandSelection, generateItinerarySchema, regenerateSlotSchema, resolveCore } from '@datewise/shared';
 import { randomUUID } from 'node:crypto';
-import { db } from '../db';
+import { db, type ItinerarySlot } from '../db';
 import { PlacesProvider } from '../places/provider';
+import { ScoringService } from './scoring.service';
+import { TaggingService } from './tagging.service';
 
 @Injectable()
 export class GeneratorService {
-  constructor(private readonly places: PlacesProvider) {}
+  private readonly tagging = new TaggingService();
 
-  async generate(input: GenerateItineraryInput) {
+  constructor(private readonly places: PlacesProvider, private readonly scoring: ScoringService) {}
+
+  private async pickBest(selection: GenerateItineraryInput['includeSlots'][number], cursor: { lat: number; lng: number }, avoided: Set<string>, blockedNames: Set<string>) {
+    const subgroup = expandSelection(selection).find((entry) => !avoided.has(entry));
+    if (!subgroup) throw new BadRequestException('No allowed subgroup candidates');
+    const candidates = await this.places.search(subgroup, cursor);
+    const scored = candidates
+      .filter((candidate) => candidate.isOpen && !blockedNames.has(candidate.name))
+      .map((candidate) => {
+        const travelMinutes = this.places.travelMinutes(cursor, candidate);
+        const relevance = this.tagging.relevanceScore(subgroup, candidate.name);
+        return {
+          candidate,
+          travelMinutes,
+          score: this.scoring.score({ relevance, travelMinutes, rating: candidate.rating }),
+        };
+      })
+      .sort((a, b) => b.score - a.score);
+    if (!scored[0]) throw new BadRequestException('No candidate found for slot');
+    return { subgroup, ...scored[0] };
+  }
+
+  async generate(input: GenerateItineraryInput): Promise<ItinerarySlot[]> {
     const parsed = generateItinerarySchema.parse(input);
     const conflicts = detectConflict(parsed.includeSlots, parsed.avoidSlots);
     if (conflicts.length > 0) throw new BadRequestException({ message: 'Slot conflict', conflicts });
@@ -16,31 +40,66 @@ export class GeneratorService {
     const avoided = new Set(parsed.avoidSlots.flatMap((item) => expandSelection(item)));
     let cursor: { lat: number; lng: number } = { lat: parsed.start.lat, lng: parsed.start.lng };
     let currentMinutes = 0;
-
-    const slots = [] as Array<{ slotIndex: number; selection: string; placeName: string; subgroup: string; travelMinutes: number; startOffsetMin: number; durationMin: number }>;
     const used = new Set<string>();
+    const slots: ItinerarySlot[] = [];
 
     for (const [idx, selection] of parsed.includeSlots.entries()) {
-      const subgroup = expandSelection(selection).find((entry) => !avoided.has(entry));
-      if (!subgroup) throw new BadRequestException(`No allowed subgroup for slot ${idx + 1}`);
-      const candidates = await this.places.search(subgroup, cursor);
-      const picked = candidates.find((candidate) => !used.has(candidate.placeId) && candidate.isOpen);
-      if (!picked) throw new BadRequestException(`No place found for slot ${idx + 1}`);
-      const travelMinutes = idx === 0 ? 0 : this.places.travelMinutes(cursor, picked);
+      const picked = await this.pickBest(selection, cursor, avoided, used);
+      const travelMinutes = idx === 0 ? 0 : picked.travelMinutes;
       currentMinutes += travelMinutes;
       const durationMin = DURATION_BY_CORE[resolveCore(selection)];
-      slots.push({ slotIndex: idx, selection, placeName: picked.name, subgroup: picked.subgroup, travelMinutes, startOffsetMin: currentMinutes, durationMin });
+      slots.push({
+        slotIndex: idx,
+        selection,
+        placeName: picked.candidate.name,
+        subgroup: picked.subgroup,
+        travelMinutes,
+        startOffsetMin: currentMinutes,
+        durationMin,
+        lat: picked.candidate.lat,
+        lng: picked.candidate.lng,
+      });
       currentMinutes += durationMin;
-      cursor = { lat: picked.lat, lng: picked.lng };
-      used.add(picked.placeId);
+      cursor = { lat: picked.candidate.lat, lng: picked.candidate.lng };
+      used.add(picked.candidate.name);
     }
 
     return slots;
   }
 
+  async regenerateSlot(input: RegenerateSlotInput): Promise<ItinerarySlot> {
+    const parsed = regenerateSlotSchema.parse(input);
+    const base = await this.generate(parsed);
+    const original = base[parsed.slotIndex];
+    if (!original) throw new BadRequestException('Invalid slot index');
+    const blocked = new Set(parsed.existingPlaceNames);
+    blocked.add(original.placeName);
+    const cursor = parsed.slotIndex === 0 ? parsed.start : base[parsed.slotIndex - 1];
+    const avoided = new Set(parsed.avoidSlots.flatMap((item) => expandSelection(item)));
+    const picked = await this.pickBest(parsed.includeSlots[parsed.slotIndex], { lat: cursor.lat, lng: cursor.lng }, avoided, blocked);
+    return {
+      ...original,
+      placeName: picked.candidate.name,
+      subgroup: picked.subgroup,
+      travelMinutes: parsed.slotIndex === 0 ? 0 : picked.travelMinutes,
+      lat: picked.candidate.lat,
+      lng: picked.candidate.lng,
+    };
+  }
+
   async saveGenerated(userId: string, input: GenerateItineraryInput, isPublic: boolean) {
     const slots = await this.generate(input);
-    const itinerary = { id: randomUUID(), userId, title: `Datewise plan ${new Date().toISOString().slice(0, 10)}`, isPublic, inputJson: JSON.stringify(input), edited: false, sourceId: null, slots, createdAt: new Date().toISOString() };
+    const itinerary = {
+      id: randomUUID(),
+      userId,
+      title: `Datewise plan ${new Date().toISOString().slice(0, 10)}`,
+      isPublic,
+      inputJson: JSON.stringify(input),
+      edited: false,
+      sourceId: null,
+      slots,
+      createdAt: new Date().toISOString(),
+    };
     db.itineraries.set(itinerary.id, itinerary);
     return itinerary;
   }

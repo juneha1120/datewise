@@ -1,36 +1,27 @@
 # Datewise MVP
 
-Datewise is a Singapore-only itinerary generator. This repository is organized as:
+Datewise is a Singapore-only itinerary generator.
 
-- `apps/web`: Next.js web client
+## Monorepo layout
+- `apps/web`: Next.js frontend
 - `apps/api`: NestJS API
-- `packages/shared`: shared taxonomy, validation schemas, and conflict helpers
+- `packages/shared`: taxonomy, validation, and conflict helpers
 
-## Quick start
+## Run locally
+```bash
+npm install
+cp .env.example .env
+npm run dev
+```
 
-1. Install dependencies:
-   ```bash
-   npm install
-   ```
-2. Copy envs:
-   ```bash
-   cp .env.example .env
-   ```
-3. Run API and web:
-   ```bash
-   npm run dev
-   ```
+## Quality checks
+```bash
+npm run typecheck
+npm run test
+npm run build
+```
 
-## Scripts
-
-- `npm run dev`
-- `npm run build`
-- `npm run typecheck`
-- `npm run test`
-
-## MVP notes
-
-- Google OAuth is implemented as backend contract endpoint (`/auth/google`) that accepts a verified profile payload.
-- Place search is deterministic provider scaffolding to keep generator behavior stable and testable.
-- `apps/api/prisma/schema.prisma` is included as the target PostgreSQL data model for production persistence.
-- Current runtime persistence in the API is in-memory (`apps/api/src/db.ts`) for local MVP iteration.
+## Notes
+- Backend currently uses deterministic in-memory persistence for local iteration in `apps/api/src/db.ts`.
+- Production target PostgreSQL schema is available at `apps/api/prisma/schema.prisma`.
+- API contracts are documented in `docs/04_API_SPEC.md`.
