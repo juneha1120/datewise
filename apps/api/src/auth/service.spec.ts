@@ -18,33 +18,21 @@ test('rejects forged bearer tokens', async () => {
   db.saved.clear();
 });
 
-test('verifies Google token before creating a session', async () => {
-  process.env.JWT_SECRET = 'unit-test-secret';
-  process.env.GOOGLE_OAUTH_CLIENT_ID = 'client-id-123';
-
+test('creates a Google-authenticated session from profile details', async () => {
   const auth = new AuthService();
-  const originalFetch = global.fetch;
-  global.fetch = async () =>
-    ({
-      ok: true,
-      async json() {
-        return {
-          aud: 'client-id-123',
-          email: 'google-user@example.com',
-          email_verified: 'true',
-          name: 'Google User',
-          picture: 'https://images.example.com/avatar.png',
-        };
-      },
-    }) as Response;
 
-  const { token, user } = await auth.googleLogin({ idToken: 'valid-google-id-token' });
+  const { token, user } = await auth.googleLogin({
+    email: 'google-user@example.com',
+    displayName: 'Google User',
+    profileImage: 'https://images.example.com/avatar.png',
+  });
   const me = await auth.getMe(token);
 
   assert.equal(user.email, 'google-user@example.com');
+  assert.equal(user.displayName, 'Google User');
+  assert.equal(user.profileImage, 'https://images.example.com/avatar.png');
   assert.equal(me.id, user.id);
 
-  global.fetch = originalFetch;
   db.users.clear();
   db.itineraries.clear();
   db.saved.clear();
