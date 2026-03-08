@@ -59,19 +59,104 @@ function payloadFromToken(token: string): TokenPayload {
 
 @Injectable()
 export class AuthService {
+  private readonly tokenSecret: string;
+
+  constructor(private readonly fetchImpl: typeof fetch = defaultFetch) {
+    this.tokenSecret = process.env.AUTH_TOKEN_SECRET ?? 'datewise-dev-auth-secret';
+  }
+
+  private sign(payloadBase64: string): string {
+    return createHmac('sha256', this.tokenSecret).update(payloadBase64).digest('base64url');
+  }
+
+  private tokenFor(user: User): string {
+    const payload: TokenPayload = {
+      sub: user.id,
+      email: user.email,
+      exp: Math.floor(Date.now() / 1000) + TOKEN_TTL_SECONDS,
+    };
+    const payloadBase64 = base64UrlEncode(JSON.stringify(payload));
+    const signature = this.sign(payloadBase64);
+    return `${payloadBase64}.${signature}`;
+  }
+
+  private parseToken(token: string): TokenPayload {
+    const [payloadBase64, signature] = token.split('.');
+    if (!payloadBase64 || !signature) {
+      throw new UnauthorizedException('Invalid token');
+    }
+
+    const expectedSignature = this.sign(payloadBase64);
+    const isValidSignature = expectedSignature.length === signature.length && timingSafeEqual(Buffer.from(expectedSignature), Buffer.from(signature));
+    if (!isValidSignature) {
+      throw new UnauthorizedException('Invalid token');
+    }
+
+    let payload: TokenPayload;
+    try {
+      payload = z.object({ sub: z.string().min(1), email: z.string().email(), exp: z.number().int().positive() }).parse(JSON.parse(base64UrlDecode(payloadBase64)));
+    } catch {
+      throw new UnauthorizedException('Invalid token');
+    }
+
+    if (payload.exp < Math.floor(Date.now() / 1000)) {
+      throw new UnauthorizedException('Token expired');
+    }
+
+    return payload;
+  }
+
+  private async verifyGoogleIdentity(idToken: string): Promise<GoogleIdentity> {
+    for (let attempt = 0; attempt <= TOKEN_MAX_RETRIES; attempt += 1) {
+      try {
+        const response = await this.fetchImpl(`${GOOGLE_TOKEN_INFO_URL}?id_token=${encodeURIComponent(idToken)}`, {
+          signal: AbortSignal.timeout(TOKEN_TIMEOUT_MS),
+        });
+
+        if (!response.ok) {
+          throw new UnauthorizedException({ code: 'GOOGLE_TOKEN_INVALID', message: 'Unable to validate Google token' });
+        }
+
+        const parsed = googleTokenInfoSchema.parse(await response.json());
+        const isVerifiedEmail = parsed.email_verified === true || parsed.email_verified === 'true';
+        if (!isVerifiedEmail) {
+          throw new UnauthorizedException({ code: 'GOOGLE_EMAIL_UNVERIFIED', message: 'Google account email is not verified' });
+        }
+
+        const requiredAudience = process.env.GOOGLE_CLIENT_ID;
+        if (requiredAudience && parsed.aud !== requiredAudience) {
+          throw new UnauthorizedException({ code: 'GOOGLE_TOKEN_AUDIENCE_MISMATCH', message: 'Google token audience mismatch' });
+        }
+
+        return {
+          email: parsed.email,
+          displayName: parsed.name ?? parsed.email.split('@')[0],
+          profileImage: parsed.picture ?? null,
+        };
+      } catch (error) {
+        if (error instanceof UnauthorizedException) throw error;
+        if (attempt === TOKEN_MAX_RETRIES) {
+          throw new UnauthorizedException({ code: 'GOOGLE_TOKEN_VERIFICATION_FAILED', message: 'Google identity verification failed' });
+        }
+      }
+    }
+
+    throw new UnauthorizedException({ code: 'GOOGLE_TOKEN_VERIFICATION_FAILED', message: 'Google identity verification failed' });
+  }
+
   async signup(input: { email: string; password: string; displayName: string }) {
     const existing = [...db.users.values()].find((user) => user.email === input.email);
     if (existing) throw new UnauthorizedException('Email already registered');
     const user: User = { id: randomUUID(), email: input.email, displayName: input.displayName, profileImage: null, password: createHash('sha256').update(input.password).digest('hex'), provider: 'EMAIL' };
     db.users.set(user.id, user);
-    return { token: tokenFor(user), user };
+    return { token: this.tokenFor(user), user };
   }
 
   async login(input: { email: string; password: string }) {
     const user = [...db.users.values()].find((entry) => entry.email === input.email && entry.provider === 'EMAIL');
     const passwordHash = createHash('sha256').update(input.password).digest('hex');
     if (!user || user.password !== passwordHash) throw new UnauthorizedException('Invalid credentials');
-    return { token: tokenFor(user), user };
+    return { token: this.tokenFor(user), user };
   }
 
   async googleLogin(input: { idToken: string }) {
@@ -92,8 +177,9 @@ export class AuthService {
       user.displayName = googleUser.displayName;
       user.profileImage = googleUser.profileImage ?? user.profileImage;
     }
+
     db.users.set(user.id, user);
-    return { token: tokenFor(user), user };
+    return { token: this.tokenFor(user), user };
   }
 
   async getMe(token: string): Promise<AuthUser> {
