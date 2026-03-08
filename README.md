@@ -3,7 +3,7 @@
 Datewise is a Singapore-only itinerary generator.
 
 ## Monorepo layout
-- `apps/web`: Next.js frontend
+- `apps/web`: Next.js frontend (separated pages: login/planner/profile/public)
 - `apps/api`: NestJS API
 - `packages/shared`: taxonomy, validation, and conflict helpers
 
@@ -20,6 +20,10 @@ npm run typecheck
 npm run test
 npm run build
 ```
+
+## Supabase auth
+- Frontend uses Supabase Auth REST endpoints for email/password signup/login and Google OAuth redirect.
+- API accepts Supabase bearer tokens and validates user identity through Supabase `/auth/v1/user` with timeout/retry safeguards.
 
 ## Notes
 - Backend currently uses deterministic in-memory persistence for local iteration in `apps/api/src/db.ts`.

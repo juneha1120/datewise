@@ -1,5 +1,5 @@
-import { DatewiseApp } from '../components/datewise-app';
+import { redirect } from 'next/navigation';
 
 export default function HomePage() {
-  return <DatewiseApp />;
+  redirect('/planner');
 }
