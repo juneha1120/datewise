@@ -1,18 +1,14 @@
 {
   "name": "datewise",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
+  "workspaces": ["apps/*","packages/*"],
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "dev:web": "npm run dev --workspace @datewise/web",
     "dev:api": "npm run dev --workspace @datewise/api",
     "build": "npm run build --workspace @datewise/shared && npm run build --workspace @datewise/api && npm run build --workspace @datewise/web",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "start:dev": "node scripts/dev.mjs",
     "test": "npm run test --workspaces --if-present"
   }
 }

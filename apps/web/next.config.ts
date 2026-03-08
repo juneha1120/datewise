@@ -1,8 +1,4 @@
 import type { NextConfig } from 'next';
 
-const nextConfig: NextConfig = {
-  reactStrictMode: true,
-  transpilePackages: ['@datewise/shared'],
-};
-
+const nextConfig: NextConfig = {};
 export default nextConfig;
