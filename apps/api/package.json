@@ -1,22 +1,23 @@
 {
   "name": "@datewise/api",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "dev": "npm run clean && npm run build --workspace @datewise/shared && nest start --watch",
-    "build": "npm run clean && nest build",
+    "build": "npm run clean && npm run build --workspace @datewise/shared && nest build",
     "start": "node dist/main.js",
     "typecheck": "npm run build --workspace @datewise/shared && tsc --noEmit",
-    "test": "npm run build --workspace @datewise/shared && npm run clean && tsc -p tsconfig.json && node --test \"dist/**/*.spec.js\"",
-    "clean": "node -e \"const fs=require('node:fs'); for (const p of ['dist','tsconfig.tsbuildinfo','tsconfig.build.tsbuildinfo']) fs.rmSync(p,{ recursive: true, force: true });\""
+    "test": "npm run build && node --test \"dist/**/*.spec.js\""
   },
   "dependencies": {
-    "@datewise/shared": "0.1.0",
+    "@datewise/shared": "1.0.0",
     "@nestjs/common": "^10.4.9",
     "@nestjs/core": "^10.4.9",
     "@nestjs/platform-express": "^10.4.9",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.1"
+    "rxjs": "^7.8.1",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.4.8",
