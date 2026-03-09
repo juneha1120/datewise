@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import { db, type User } from '../db';
 import { fetchWithRetry, type ExternalHttpError } from '../external.http';
@@ -10,17 +10,22 @@ function tokenFor(user: User) {
   return Buffer.from(`${user.id}:${user.email}`).toString('base64url');
 }
 
+function fallbackDisplayName(email: string) {
+  const [name] = email.split('@');
+  return name?.trim() ? name : 'Datewise User';
+}
+
 @Injectable()
 export class AuthService {
   private supabaseCache = new Map<string, { user: SupabaseUser; expiresAt: number }>();
 
-  async signup(input: { email: string; password: string; displayName: string }) {
+  async signup(input: { email: string; password: string; displayName?: string }) {
     const existing = [...db.users.values()].find((user) => user.email === input.email);
     if (existing) throw new UnauthorizedException('Email already registered');
     const user: User = {
       id: randomUUID(),
       email: input.email,
-      displayName: input.displayName,
+      displayName: input.displayName?.trim() || fallbackDisplayName(input.email),
       profileImage: null,
       password: createHash('sha256').update(input.password).digest('hex'),
       provider: 'EMAIL',
@@ -114,6 +119,17 @@ export class AuthService {
     if (local) return local;
     const supabaseUser = await this.fetchSupabaseUser(token);
     return this.upsertSupabaseUser(supabaseUser);
+  }
+
+  async updateDisplayName(token: string, displayName: string): Promise<AuthUser> {
+    const nextName = displayName.trim();
+    if (!nextName) throw new BadRequestException('Display name cannot be empty');
+    const me = await this.getMe(token);
+    const existing = db.users.get(me.id);
+    if (!existing) throw new UnauthorizedException('User not found');
+    existing.displayName = nextName;
+    db.users.set(existing.id, existing);
+    return { id: existing.id, email: existing.email, displayName: existing.displayName, profileImage: existing.profileImage };
   }
 
   async profile(token: string) {
