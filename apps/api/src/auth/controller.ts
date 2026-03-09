@@ -15,6 +15,12 @@ export class AuthController {
     return this.authService.login(body);
   }
 
+
+  @Post('google')
+  google(@Body() body: { email: string; displayName: string; profileImage?: string }) {
+    return this.authService.googleLogin(body);
+  }
+
   @Get('me')
   me(@Headers('authorization') authorization?: string): Promise<AuthUser> {
     const token = authorization?.replace('Bearer ', '');
