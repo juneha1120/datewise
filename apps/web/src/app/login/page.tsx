@@ -22,8 +22,8 @@ export default function LoginPage() {
               await signUp(email, password, displayName);
               setMessage('Signup successful. Redirecting to planner...');
               location.href = '/planner';
-            } catch {
-              setMessage('Signup failed.');
+            } catch (error) {
+              setMessage(`Signup failed: ${error instanceof Error ? error.message : 'unknown error'}`);
             }
           }}
         >
@@ -34,8 +34,8 @@ export default function LoginPage() {
             try {
               await signIn(email, password);
               location.href = '/planner';
-            } catch {
-              setMessage('Login failed.');
+            } catch (error) {
+              setMessage(`Login failed: ${error instanceof Error ? error.message : 'unknown error'}`);
             }
           }}
         >
@@ -46,8 +46,8 @@ export default function LoginPage() {
             try {
               await signInWithGoogle(email, displayName);
               location.href = '/planner';
-            } catch {
-              setMessage('Google login failed.');
+            } catch (error) {
+              setMessage(`Google login failed: ${error instanceof Error ? error.message : 'unknown error'}`);
             }
           }}
         >

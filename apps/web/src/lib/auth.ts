@@ -7,9 +7,12 @@ type AuthResponse = { token: string; user: { id: string; email?: string } };
 const storageKey = 'datewise.auth.session';
 
 function apiBaseUrl() {
-  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-  if (!baseUrl) throw new Error('API base URL is missing');
-  return baseUrl;
+  const configured = process.env.NEXT_PUBLIC_API_BASE_URL;
+  if (configured) return configured;
+  if (typeof window !== 'undefined') {
+    return `${window.location.protocol}//${window.location.hostname}:3001`;
+  }
+  return 'http://localhost:3001';
 }
 
 export function readSession(): AuthSession | null {
@@ -37,7 +40,10 @@ async function apiPost(path: string, body: unknown): Promise<AuthResponse> {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
   });
-  if (!response.ok) throw new Error(await response.text());
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `Request failed with status ${response.status}`);
+  }
   return (await response.json()) as AuthResponse;
 }
 
