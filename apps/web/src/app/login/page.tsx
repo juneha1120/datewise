@@ -1,12 +1,26 @@
 'use client';
 
-import { useState } from 'react';
-import { googleAuthUrl, signIn, signUp } from '../../lib/auth';
+import { useEffect, useState } from 'react';
+import { googleAuthUrl, signIn, signUp, writeSession } from '../../lib/auth';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const accessToken = hash.get('access_token');
+    const refreshToken = hash.get('refresh_token');
+    if (!accessToken || !refreshToken) return;
+
+    writeSession({ accessToken, refreshToken, user: { id: hash.get('provider_token') ?? 'oauth-user' } });
+    setMessage('Google login successful. Redirecting to planner...');
+    window.location.hash = '';
+    setTimeout(() => {
+      location.href = '/planner';
+    }, 300);
+  }, []);
 
   return (
     <main className="mx-auto grid max-w-xl gap-3 p-6">
