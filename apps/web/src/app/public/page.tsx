@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { readSession } from '../../lib/auth';
+import { apiBaseUrl, readSession } from '../../lib/auth';
 
 type PublicItem = {
   id: string;
@@ -16,8 +16,11 @@ export default function PublicPage() {
   const [info, setInfo] = useState('');
 
   async function refresh() {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/itineraries/public`);
-    if (!response.ok) return setError('Failed to load public itineraries');
+    const response = await fetch(`${apiBaseUrl()}/itineraries/public`);
+    if (!response.ok) {
+      const text = await response.text();
+      return setError(`Failed to load public itineraries: ${text}`);
+    }
     setItems((await response.json()) as PublicItem[]);
     setError('');
   }
@@ -26,12 +29,15 @@ export default function PublicPage() {
     const token = readSession()?.accessToken;
     if (!token) return setError('Please login first');
 
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/itineraries/public/${id}/save-copy`, {
+    const response = await fetch(`${apiBaseUrl()}/itineraries/public/${id}/save-copy`, {
       method: 'POST',
       headers: { authorization: `Bearer ${token}` },
     });
 
-    if (!response.ok) return setError('Failed to save copy');
+    if (!response.ok) {
+      const text = await response.text();
+      return setError(`Failed to save copy: ${text}`);
+    }
     setError('');
     setInfo('Saved a copy to your account.');
   }

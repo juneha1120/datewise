@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { detectConflict, CORE_GROUPS, SUBGROUPS, type SlotSelection } from '../../../../../packages/shared/src/index';
-import { readSession } from '../../lib/auth';
+import { apiBaseUrl, readSession } from '../../lib/auth';
 
 type PlanSlot = {
   slotIndex: number;
@@ -14,10 +14,25 @@ type PlanSlot = {
   subgroup: string;
 };
 
+type StartOption = { label: string; lat: number; lng: number };
+
 const allSelections = [...CORE_GROUPS, ...Object.values(SUBGROUPS).flat()] as SlotSelection[];
+const startOptions: StartOption[] = [
+  { label: 'Marina Bay Sands', lat: 1.2834, lng: 103.8607 },
+  { label: 'Orchard Road', lat: 1.3048, lng: 103.8318 },
+  { label: 'Gardens by the Bay', lat: 1.2816, lng: 103.8636 },
+  { label: 'Clarke Quay', lat: 1.2906, lng: 103.8465 },
+  { label: 'Chinatown MRT', lat: 1.284, lng: 103.8439 },
+  { label: 'Bugis Junction', lat: 1.299, lng: 103.8553 },
+  { label: 'Tiong Bahru', lat: 1.2854, lng: 103.8272 },
+  { label: 'Holland Village', lat: 1.3112, lng: 103.7967 },
+  { label: 'Sentosa', lat: 1.2494, lng: 103.8303 },
+  { label: 'East Coast Park', lat: 1.3039, lng: 103.9122 },
+];
 
 export default function PlannerPage() {
-  const [start, setStart] = useState({ label: 'Marina Bay Sands', lat: 1.2834, lng: 103.8607 });
+  const [start, setStart] = useState<StartOption>(startOptions[0]);
+  const [startQuery, setStartQuery] = useState(startOptions[0].label);
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [time, setTime] = useState(new Date().toTimeString().slice(0, 5));
   const [includeSlots, setIncludeSlots] = useState<SlotSelection[]>(['EAT', 'DO', 'SIP']);
@@ -28,18 +43,33 @@ export default function PlannerPage() {
 
   const conflicts = useMemo(() => detectConflict(includeSlots, avoidSlots), [includeSlots, avoidSlots]);
   const token = readSession()?.accessToken;
+  const filteredStartOptions = useMemo(
+    () => startOptions.filter((option) => option.label.toLowerCase().includes(startQuery.toLowerCase())).slice(0, 6),
+    [startQuery],
+  );
+
+  function applyStart(option: StartOption) {
+    setStart(option);
+    setStartQuery(option.label);
+    setInfo(`Start location set to ${option.label}`);
+    setError('');
+  }
 
   async function generate() {
     if (!token) return setError('Please login first');
     if (conflicts.length > 0) return setError(conflicts.join(', '));
 
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/itineraries/generate`, {
+    const response = await fetch(`${apiBaseUrl()}/itineraries/generate`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
       body: JSON.stringify({ start, date, time, includeSlots, avoidSlots }),
     });
 
-    if (!response.ok) return setError('Generation failed');
+    if (!response.ok) {
+      const text = await response.text();
+      return setError(`Generation failed: ${text}`);
+    }
+
     setResult((await response.json()) as PlanSlot[]);
     setError('');
     setInfo('Generated itinerary successfully.');
@@ -47,12 +77,15 @@ export default function PlannerPage() {
 
   async function regenerateSlot(slotIndex: number) {
     if (!token) return setError('Please login first');
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/itineraries/regenerate-slot`, {
+    const response = await fetch(`${apiBaseUrl()}/itineraries/regenerate-slot`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
       body: JSON.stringify({ start, date, time, includeSlots, avoidSlots, slotIndex, existingPlaceNames: result.map((slot) => slot.placeName) }),
     });
-    if (!response.ok) return setError('Regenerate slot failed');
+    if (!response.ok) {
+      const text = await response.text();
+      return setError(`Regenerate slot failed: ${text}`);
+    }
     const updated = (await response.json()) as PlanSlot;
     setResult((prev) => prev.map((slot, idx) => (idx === slotIndex ? updated : slot)));
     setError('');
@@ -61,13 +94,16 @@ export default function PlannerPage() {
 
   async function save(isPublic: boolean) {
     if (!token) return setError('Please login first');
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/itineraries/save`, {
+    const response = await fetch(`${apiBaseUrl()}/itineraries/save`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
       body: JSON.stringify({ input: { start, date, time, includeSlots, avoidSlots }, isPublic }),
     });
 
-    if (!response.ok) return setError('Save failed');
+    if (!response.ok) {
+      const text = await response.text();
+      return setError(`Save failed: ${text}`);
+    }
     setError('');
     setInfo(isPublic ? 'Saved to public itineraries.' : 'Saved to your profile itineraries.');
   }
@@ -79,7 +115,17 @@ export default function PlannerPage() {
 
       <section className="grid gap-2 rounded border border-slate-700 p-3">
         <h2 className="font-semibold">Start point</h2>
-        <input value={start.label} onChange={(event) => setStart((prev) => ({ ...prev, label: event.target.value }))} placeholder="Location name" />
+        <input value={startQuery} onChange={(event) => setStartQuery(event.target.value)} placeholder="Search start location" />
+        <div className="grid gap-2 sm:grid-cols-2">
+          {filteredStartOptions.map((option) => (
+            <button key={option.label} onClick={() => applyStart(option)} className="text-left">
+              {option.label}
+            </button>
+          ))}
+        </div>
+        <p className="text-slate-400 text-sm">
+          Selected: {start.label} ({start.lat.toFixed(4)}, {start.lng.toFixed(4)})
+        </p>
         <div className="grid grid-cols-2 gap-3">
           <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
           <input type="time" value={time} onChange={(event) => setTime(event.target.value)} />
