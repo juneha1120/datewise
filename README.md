@@ -21,9 +21,14 @@ npm run test
 npm run build
 ```
 
-## Supabase auth
-- Frontend uses Supabase Auth REST endpoints for email/password signup/login and Google OAuth redirect.
-- API accepts Supabase bearer tokens and validates user identity through Supabase `/auth/v1/user` with timeout/retry safeguards.
+## Auth behavior
+- Frontend primary auth uses Datewise API endpoints (`/auth/signup`, `/auth/login`) for local email/password flows.
+- API uses in-memory users in local dev; if the API restarts, sign in again to refresh session state.
+- API can also validate Supabase bearer tokens via `/auth/v1/user` when Supabase env vars are configured.
+
+## Google location autocomplete
+- Planner start-point search uses Google Places Autocomplete + Place Details (Singapore-only filter).
+- Set `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` in `.env` to enable autocomplete in the web app.
 
 ## Notes
 - Backend currently uses deterministic in-memory persistence for local iteration in `apps/api/src/db.ts`.

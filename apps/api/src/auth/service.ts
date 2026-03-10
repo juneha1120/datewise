@@ -54,16 +54,23 @@ export class AuthService {
     return { token: tokenFor(user), user };
   }
 
-  private getLocalUserFromToken(token: string): AuthUser | null {
+  private parseLocalToken(token: string): { id: string; email: string } | null {
     try {
       const decoded = Buffer.from(token, 'base64url').toString();
-      const [id] = decoded.split(':');
-      const user = db.users.get(id);
-      if (!user) return null;
-      return { id: user.id, email: user.email, displayName: user.displayName, profileImage: user.profileImage };
+      const [id, email] = decoded.split(':');
+      if (!id || !email || !email.includes('@')) return null;
+      return { id, email };
     } catch {
       return null;
     }
+  }
+
+  private getLocalUserFromToken(token: string): AuthUser | null {
+    const parsed = this.parseLocalToken(token);
+    if (!parsed) return null;
+    const user = db.users.get(parsed.id);
+    if (!user) return null;
+    return { id: user.id, email: user.email, displayName: user.displayName, profileImage: user.profileImage };
   }
 
   private async fetchSupabaseUser(accessToken: string): Promise<SupabaseUser> {
@@ -117,6 +124,12 @@ export class AuthService {
   async getMe(token: string): Promise<AuthUser> {
     const local = this.getLocalUserFromToken(token);
     if (local) return local;
+
+    const parsedLocal = this.parseLocalToken(token);
+    if (parsedLocal) {
+      throw new UnauthorizedException('Local session expired. Please login again.');
+    }
+
     const supabaseUser = await this.fetchSupabaseUser(token);
     return this.upsertSupabaseUser(supabaseUser);
   }

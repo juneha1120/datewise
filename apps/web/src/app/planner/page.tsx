@@ -14,25 +14,17 @@ type PlanSlot = {
   subgroup: string;
 };
 
-type StartOption = { label: string; lat: number; lng: number };
+type StartOption = { label: string; lat: number; lng: number; placeId?: string };
+type GooglePrediction = { description: string; place_id: string };
 
 const allSelections = [...CORE_GROUPS, ...Object.values(SUBGROUPS).flat()] as SlotSelection[];
-const startOptions: StartOption[] = [
-  { label: 'Marina Bay Sands', lat: 1.2834, lng: 103.8607 },
-  { label: 'Orchard Road', lat: 1.3048, lng: 103.8318 },
-  { label: 'Gardens by the Bay', lat: 1.2816, lng: 103.8636 },
-  { label: 'Clarke Quay', lat: 1.2906, lng: 103.8465 },
-  { label: 'Chinatown MRT', lat: 1.284, lng: 103.8439 },
-  { label: 'Bugis Junction', lat: 1.299, lng: 103.8553 },
-  { label: 'Tiong Bahru', lat: 1.2854, lng: 103.8272 },
-  { label: 'Holland Village', lat: 1.3112, lng: 103.7967 },
-  { label: 'Sentosa', lat: 1.2494, lng: 103.8303 },
-  { label: 'East Coast Park', lat: 1.3039, lng: 103.9122 },
-];
+const defaultStart: StartOption = { label: 'Marina Bay Sands', lat: 1.2834, lng: 103.8607 };
 
 export default function PlannerPage() {
-  const [start, setStart] = useState<StartOption>(startOptions[0]);
-  const [startQuery, setStartQuery] = useState(startOptions[0].label);
+  const [start, setStart] = useState<StartOption>(defaultStart);
+  const [startQuery, setStartQuery] = useState(defaultStart.label);
+  const [suggestions, setSuggestions] = useState<GooglePrediction[]>([]);
+  const [searchingStart, setSearchingStart] = useState(false);
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [time, setTime] = useState(new Date().toTimeString().slice(0, 5));
   const [includeSlots, setIncludeSlots] = useState<SlotSelection[]>(['EAT', 'DO', 'SIP']);
@@ -43,16 +35,62 @@ export default function PlannerPage() {
 
   const conflicts = useMemo(() => detectConflict(includeSlots, avoidSlots), [includeSlots, avoidSlots]);
   const token = readSession()?.accessToken;
-  const filteredStartOptions = useMemo(
-    () => startOptions.filter((option) => option.label.toLowerCase().includes(startQuery.toLowerCase())).slice(0, 6),
-    [startQuery],
-  );
+  const googleMapsKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 
-  function applyStart(option: StartOption) {
-    setStart(option);
-    setStartQuery(option.label);
-    setInfo(`Start location set to ${option.label}`);
+  async function searchStartLocations(query: string) {
+    setStartQuery(query);
     setError('');
+    if (!googleMapsKey || query.trim().length < 2) {
+      setSuggestions([]);
+      return;
+    }
+
+    setSearchingStart(true);
+    try {
+      const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(query)}&components=country:sg&types=establishment|geocode&key=${googleMapsKey}`;
+      const response = await fetch(url);
+      const data = (await response.json()) as { status: string; predictions?: GooglePrediction[]; error_message?: string };
+      if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
+        setError(`Location search failed: ${data.error_message ?? data.status}`);
+        setSuggestions([]);
+        return;
+      }
+      setSuggestions(data.predictions ?? []);
+    } catch (searchError) {
+      setSuggestions([]);
+      setError(`Location search failed: ${searchError instanceof Error ? searchError.message : 'unknown error'}`);
+    } finally {
+      setSearchingStart(false);
+    }
+  }
+
+  async function chooseSuggestion(prediction: GooglePrediction) {
+    if (!googleMapsKey) return;
+    try {
+      const detailsUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(prediction.place_id)}&fields=name,geometry,place_id&key=${googleMapsKey}`;
+      const response = await fetch(detailsUrl);
+      const data = (await response.json()) as {
+        status: string;
+        result?: { name: string; place_id: string; geometry: { location: { lat: number; lng: number } } };
+        error_message?: string;
+      };
+      if (data.status !== 'OK' || !data.result) {
+        return setError(`Location details failed: ${data.error_message ?? data.status}`);
+      }
+      const next = {
+        label: data.result.name,
+        lat: data.result.geometry.location.lat,
+        lng: data.result.geometry.location.lng,
+        placeId: data.result.place_id,
+      };
+      setStart(next);
+      setStartQuery(next.label);
+      setSuggestions([]);
+      setInfo(`Start location set to ${next.label}.`);
+      setError('');
+    } catch (detailsError) {
+      setError(`Location details failed: ${detailsError instanceof Error ? detailsError.message : 'unknown error'}`);
+    }
   }
 
   async function generate() {
@@ -115,14 +153,18 @@ export default function PlannerPage() {
 
       <section className="grid gap-2 rounded border border-slate-700 p-3">
         <h2 className="font-semibold">Start point</h2>
-        <input value={startQuery} onChange={(event) => setStartQuery(event.target.value)} placeholder="Search start location" />
-        <div className="grid gap-2 sm:grid-cols-2">
-          {filteredStartOptions.map((option) => (
-            <button key={option.label} onClick={() => applyStart(option)} className="text-left">
-              {option.label}
-            </button>
-          ))}
-        </div>
+        <input value={startQuery} onChange={(event) => void searchStartLocations(event.target.value)} placeholder="Search Singapore location" />
+        {!googleMapsKey && <p className="text-amber-300 text-sm">Set NEXT_PUBLIC_GOOGLE_MAPS_API_KEY to enable Google autocomplete.</p>}
+        {searchingStart && <p className="text-slate-400 text-sm">Searching locations...</p>}
+        {suggestions.length > 0 && (
+          <div className="grid gap-2">
+            {suggestions.map((option) => (
+              <button key={option.place_id} onClick={() => void chooseSuggestion(option)} className="text-left">
+                {option.description}
+              </button>
+            ))}
+          </div>
+        )}
         <p className="text-slate-400 text-sm">
           Selected: {start.label} ({start.lat.toFixed(4)}, {start.lng.toFixed(4)})
         </p>
