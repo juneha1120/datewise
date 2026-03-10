@@ -61,3 +61,16 @@ test('allows updating display name after signup', async () => {
   db.itineraries.clear();
   db.saved.clear();
 });
+
+
+test('returns local session expired when token belongs to cleared in-memory user', async () => {
+  const auth = new AuthService();
+  const { token } = await auth.signup({ email: 'stale@example.com', password: 'pw123' });
+  db.users.clear();
+
+  await assert.rejects(() => auth.getMe(token), /Local session expired/);
+
+  db.users.clear();
+  db.itineraries.clear();
+  db.saved.clear();
+});
