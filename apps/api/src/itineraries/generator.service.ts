@@ -6,6 +6,14 @@ import { PlacesProvider } from '../places/provider';
 import { ScoringService } from './scoring.service';
 import { TaggingService } from './tagging.service';
 
+function addMinutes(date: Date, minutes: number) {
+  return new Date(date.getTime() + minutes * 60_000);
+}
+
+function combineDateTime(date: string, time: string) {
+  return new Date(`${date}T${time}:00`);
+}
+
 @Injectable()
 export class GeneratorService {
   private readonly tagging = new TaggingService();
@@ -37,6 +45,7 @@ export class GeneratorService {
     const conflicts = detectConflict(parsed.includeSlots, parsed.avoidSlots);
     if (conflicts.length > 0) throw new BadRequestException({ message: 'Slot conflict', conflicts });
 
+    const baseDateTime = combineDateTime(parsed.date, parsed.time);
     const avoided = new Set(parsed.avoidSlots.flatMap((item) => expandSelection(item)));
     let cursor: { lat: number; lng: number } = { lat: parsed.start.lat, lng: parsed.start.lng };
     let currentMinutes = 0;
@@ -47,15 +56,28 @@ export class GeneratorService {
       const picked = await this.pickBest(selection, cursor, avoided, used);
       const travelMinutes = idx === 0 ? 0 : picked.travelMinutes;
       currentMinutes += travelMinutes;
+      const arrival = addMinutes(baseDateTime, currentMinutes);
       const durationMin = DURATION_BY_CORE[resolveCore(selection)];
+      const departure = addMinutes(arrival, durationMin);
       slots.push({
         slotIndex: idx,
         selection,
+        slotType: resolveCore(selection),
         placeName: picked.candidate.name,
+        place: {
+          name: picked.candidate.name,
+          placeId: picked.candidate.placeId,
+          latitude: picked.candidate.lat,
+          longitude: picked.candidate.lng,
+          address: `Singapore (${picked.candidate.subgroup.replaceAll('_', ' ')})`,
+          rating: picked.candidate.rating,
+        },
         subgroup: picked.subgroup,
         travelMinutes,
         startOffsetMin: currentMinutes,
         durationMin,
+        arrivalTime: arrival.toISOString(),
+        departureTime: departure.toISOString(),
         lat: picked.candidate.lat,
         lng: picked.candidate.lng,
       });
@@ -80,6 +102,14 @@ export class GeneratorService {
     return {
       ...original,
       placeName: picked.candidate.name,
+      place: {
+        name: picked.candidate.name,
+        placeId: picked.candidate.placeId,
+        latitude: picked.candidate.lat,
+        longitude: picked.candidate.lng,
+        address: `Singapore (${picked.candidate.subgroup.replaceAll('_', ' ')})`,
+        rating: picked.candidate.rating,
+      },
       subgroup: picked.subgroup,
       travelMinutes: parsed.slotIndex === 0 ? 0 : picked.travelMinutes,
       lat: picked.candidate.lat,

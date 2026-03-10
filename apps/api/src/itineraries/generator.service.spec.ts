@@ -11,7 +11,7 @@ const places = {
   travelMinutes: (from: { lat: number; lng: number }, to: { lat: number; lng: number }) => Math.round(Math.abs(from.lat - to.lat) * 200 + Math.abs(from.lng - to.lng) * 200),
 };
 
-test('assemble itinerary with travel legs', async () => {
+test('assemble itinerary with travel legs and timestamps', async () => {
   const service = new GeneratorService(places as never, new ScoringService());
   const result = await service.generate({
     start: { label: 'A', lat: 1.3, lng: 103.8 },
@@ -22,6 +22,10 @@ test('assemble itinerary with travel legs', async () => {
   });
   assert.equal(result.length, 2);
   assert.equal(result[0].travelMinutes, 0);
+  assert.equal(Boolean(result[0].arrivalTime), true);
+  assert.equal(Boolean(result[0].departureTime), true);
+  assert.equal(result[0].place?.name, result[0].placeName);
+  assert.equal(result[0].slotType, 'EAT');
 });
 
 test('rejects conflicts', async () => {
@@ -47,4 +51,5 @@ test('regenerate slot returns alternate place', async () => {
     existingPlaceNames: ['COFFEE Prime'],
   });
   assert.equal(updated.placeName.includes('Far'), true);
+  assert.equal(Boolean(updated.place?.placeId), true);
 });
