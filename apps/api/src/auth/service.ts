@@ -5,6 +5,14 @@ import { fetchWithRetry, type ExternalHttpError } from '../external.http';
 
 export type AuthUser = { id: string; email: string; displayName: string; profileImage: string | null };
 type SupabaseUser = { id: string; email?: string; user_metadata?: { full_name?: string; avatar_url?: string } };
+type GoogleTokenInfo = {
+  email: string;
+  name?: string;
+  picture?: string;
+  email_verified?: 'true' | 'false';
+  iss?: string;
+  aud?: string;
+};
 
 function tokenFor(user: User) {
   return Buffer.from(`${user.id}:${user.email}`).toString('base64url');
@@ -41,13 +49,50 @@ export class AuthService {
     return { token: tokenFor(user), user };
   }
 
-  async googleLogin(input: { email: string; displayName: string; profileImage?: string }) {
-    let user = [...db.users.values()].find((entry) => entry.email === input.email);
+  private async verifyGoogleIdToken(idToken: string): Promise<GoogleTokenInfo> {
+    if (!idToken?.trim()) throw new UnauthorizedException('Missing Google ID token');
+
+    let response: Response;
+    try {
+      response = await fetchWithRetry(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`, {}, 5000, 2);
+    } catch (error) {
+      const mapped: ExternalHttpError = {
+        provider: 'supabase',
+        code: error instanceof Error && error.name === 'AbortError' ? 'timeout' : 'network_error',
+        message: error instanceof Error ? error.message : 'Unknown network error',
+      };
+      throw new UnauthorizedException(mapped);
+    }
+
+    if (!response.ok) {
+      throw new UnauthorizedException('Invalid Google ID token');
+    }
+
+    const tokenInfo = (await response.json()) as GoogleTokenInfo;
+    if (!tokenInfo.email || tokenInfo.email_verified !== 'true') throw new UnauthorizedException('Google email must be verified');
+
+    const issuer = tokenInfo.iss;
+    if (issuer !== 'accounts.google.com' && issuer !== 'https://accounts.google.com') {
+      throw new UnauthorizedException('Invalid Google token issuer');
+    }
+
+    const expectedAudience = process.env.GOOGLE_CLIENT_ID?.trim();
+    if (expectedAudience && tokenInfo.aud !== expectedAudience) {
+      throw new UnauthorizedException('Google token audience mismatch');
+    }
+
+    return tokenInfo;
+  }
+
+  async googleLogin(input: { idToken: string }) {
+    const tokenInfo = await this.verifyGoogleIdToken(input.idToken);
+    const displayName = tokenInfo.name?.trim() || fallbackDisplayName(tokenInfo.email);
+    let user = [...db.users.values()].find((entry) => entry.email === tokenInfo.email);
     if (!user) {
-      user = { id: randomUUID(), email: input.email, displayName: input.displayName, profileImage: input.profileImage ?? null, provider: 'GOOGLE' };
+      user = { id: randomUUID(), email: tokenInfo.email, displayName, profileImage: tokenInfo.picture ?? null, provider: 'GOOGLE' };
     } else {
-      user.displayName = input.displayName;
-      user.profileImage = input.profileImage ?? user.profileImage;
+      user.displayName = displayName;
+      user.profileImage = tokenInfo.picture ?? user.profileImage;
       user.provider = 'GOOGLE';
     }
     db.users.set(user.id, user);
