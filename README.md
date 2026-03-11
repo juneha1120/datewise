@@ -33,4 +33,4 @@ npm run build
 ## Notes
 - Backend currently uses deterministic in-memory persistence for local iteration in `apps/api/src/db.ts`.
 - Production target PostgreSQL schema is available at `apps/api/prisma/schema.prisma`.
-- API contracts are documented in `docs/04_API_SPEC.md`.
+- API contracts are documented in `docs/DATEWISE_API_SPEC.md`.
