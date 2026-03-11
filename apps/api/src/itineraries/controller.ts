@@ -17,14 +17,12 @@ export class ItinerariesController {
   }
 
   @Post('generate')
-  async generate(@Headers('authorization') authorization: string | undefined, @Body() input: GenerateItineraryInput) {
-    await this.userIdFromHeader(authorization);
+  async generate(@Body() input: GenerateItineraryInput) {
     return this.generator.generate(input);
   }
 
   @Post('regenerate-slot')
-  async regenerateSlot(@Headers('authorization') authorization: string | undefined, @Body() input: RegenerateSlotInput) {
-    await this.userIdFromHeader(authorization);
+  async regenerateSlot(@Body() input: RegenerateSlotInput) {
     return this.generator.regenerateSlot(input);
   }
 
