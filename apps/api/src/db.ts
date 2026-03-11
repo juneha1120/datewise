@@ -10,11 +10,22 @@ export type User = {
 export type ItinerarySlot = {
   slotIndex: number;
   selection: string;
+  slotType?: string;
   placeName: string;
+  place?: {
+    name: string;
+    placeId: string;
+    latitude: number;
+    longitude: number;
+    address: string;
+    rating?: number;
+  };
   subgroup: string;
   travelMinutes: number;
   startOffsetMin: number;
   durationMin: number;
+  arrivalTime?: string;
+  departureTime?: string;
   lat: number;
   lng: number;
 };
