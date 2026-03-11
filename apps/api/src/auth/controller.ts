@@ -16,7 +16,7 @@ export class AuthController {
   }
 
   @Post('google')
-  google(@Body() body: { email: string; displayName: string; profileImage?: string }) {
+  google(@Body() body: { idToken: string }) {
     return this.authService.googleLogin(body);
   }
 
