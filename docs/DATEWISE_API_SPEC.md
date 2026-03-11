@@ -11,7 +11,7 @@ Authentication uses session or bearer token provided by the auth provider.
 # Authentication
 
 Authentication is handled by the auth provider (Google OAuth / Email Magic Link).
-
+Marina Bay Sands
 Backend endpoints rely on authenticated user context.
 
 ## Get Current User

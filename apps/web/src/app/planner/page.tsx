@@ -24,6 +24,7 @@ type StartPoint = { label: string; lat: number; lng: number; placeId?: string };
 type Prediction = { description: string; place_id: string };
 
 const allSelections = [...CORE_GROUPS, ...Object.values(SUBGROUPS).flat()] as SlotSelection[];
+const defaultStart: StartOption = { label: 'Marina Bay Sands', lat: 1.2834, lng: 103.8607 };
 
 export default function PlannerPage() {
   const [start, setStart] = useState<StartPoint>({ label: 'Marina Bay Sands', lat: 1.2834, lng: 103.8607 });
