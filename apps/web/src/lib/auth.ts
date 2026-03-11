@@ -2,7 +2,18 @@
 
 export type AuthSession = { accessToken: string; refreshToken: string; user: { id: string; email?: string } };
 
-const storageKey = 'datewise.supabase.session';
+type AuthResponse = { token: string; user: { id: string; email?: string } };
+
+const storageKey = 'datewise.auth.session';
+
+export function apiBaseUrl() {
+  const configured = process.env.NEXT_PUBLIC_API_BASE_URL;
+  if (configured) return configured;
+  if (typeof window !== 'undefined') {
+    return `${window.location.protocol}//${window.location.hostname}:3001`;
+  }
+  return 'http://localhost:3001';
+}
 
 export function readSession(): AuthSession | null {
   if (typeof window === 'undefined') return null;
@@ -23,37 +34,33 @@ export function clearSession() {
   localStorage.removeItem(storageKey);
 }
 
-async function supabasePost(path: string, body: unknown) {
-  const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!baseUrl || !anonKey) throw new Error('Supabase env is missing');
-  const response = await fetch(`${baseUrl}${path}`, {
+async function apiPost(path: string, body: unknown): Promise<AuthResponse> {
+  const response = await fetch(`${apiBaseUrl()}${path}`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', apikey: anonKey },
+    headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
   });
-  if (!response.ok) throw new Error(await response.text());
-  return response.json();
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `Request failed with status ${response.status}`);
+  }
+  return (await response.json()) as AuthResponse;
 }
 
-export async function signUp(email: string, password: string) {
-  return supabasePost('/auth/v1/signup', { email, password });
+function sessionFromAuthResponse(data: AuthResponse): AuthSession {
+  return { accessToken: data.token, refreshToken: '', user: data.user };
 }
 
-export async function signIn(email: string, password: string): Promise<AuthSession> {
-  const data = (await supabasePost('/auth/v1/token?grant_type=password', { email, password })) as {
-    access_token: string;
-    refresh_token: string;
-    user: { id: string; email?: string };
-  };
-  const session: AuthSession = { accessToken: data.access_token, refreshToken: data.refresh_token, user: data.user };
+export async function signUp(email: string, password: string): Promise<AuthSession> {
+  const data = await apiPost('/auth/signup', { email, password });
+  const session = sessionFromAuthResponse(data);
   writeSession(session);
   return session;
 }
 
-export function googleAuthUrl() {
-  const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  const redirect = `${window.location.origin}/login`;
-  return `${baseUrl}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirect)}&apikey=${anonKey}`;
+export async function signIn(email: string, password: string): Promise<AuthSession> {
+  const data = await apiPost('/auth/login', { email, password });
+  const session = sessionFromAuthResponse(data);
+  writeSession(session);
+  return session;
 }

@@ -37,3 +37,40 @@ test('creates a Google-authenticated session from profile details', async () => 
   db.itineraries.clear();
   db.saved.clear();
 });
+
+test('signup can derive display name from email when omitted', async () => {
+  const auth = new AuthService();
+  const { user } = await auth.signup({ email: 'sam@example.com', password: 'pw123' });
+  assert.equal(user.displayName, 'sam');
+
+  db.users.clear();
+  db.itineraries.clear();
+  db.saved.clear();
+});
+
+test('allows updating display name after signup', async () => {
+  const auth = new AuthService();
+  const { token } = await auth.signup({ email: 'profile@example.com', password: 'pw123' });
+  const updated = await auth.updateDisplayName(token, 'New Username');
+
+  assert.equal(updated.displayName, 'New Username');
+  const me = await auth.getMe(token);
+  assert.equal(me.displayName, 'New Username');
+
+  db.users.clear();
+  db.itineraries.clear();
+  db.saved.clear();
+});
+
+
+test('returns local session expired when token belongs to cleared in-memory user', async () => {
+  const auth = new AuthService();
+  const { token } = await auth.signup({ email: 'stale@example.com', password: 'pw123' });
+  db.users.clear();
+
+  await assert.rejects(() => auth.getMe(token), /Local session expired/);
+
+  db.users.clear();
+  db.itineraries.clear();
+  db.saved.clear();
+});
