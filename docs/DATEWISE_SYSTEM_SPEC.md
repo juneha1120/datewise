@@ -721,26 +721,7 @@ The MVP is complete when:
 
 ---
 
-# 28. Documentation Rules
-
-Repository documentation should remain **minimal**.
-
-Allowed:
-
-
-README.md
-.env.example
-
-
-Do **not** keep:
-
-- rebuild notes
-- agent instructions
-- migration docs
-
----
-
-# 29. Version
+# 28. Version
 
 
 Datewise System Specification
