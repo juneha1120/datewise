@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { detectConflict, CORE_GROUPS, SUBGROUPS, type SlotSelection } from '../../../../../packages/shared/src/index';
+import { detectConflict, CORE_GROUPS, SUBGROUPS, type SlotType } from '@datewise/shared';
 import { apiBaseUrl, readSession } from '../../lib/auth';
 
 declare global {
@@ -12,29 +12,36 @@ declare global {
 
 type PlanSlot = {
   slotIndex: number;
-  selection: SlotSelection;
-  placeName: string;
-  travelMinutes: number;
-  startOffsetMin: number;
-  durationMin: number;
+  slotType: SlotType;
   subgroup: string;
+  travelMinutes: number;
+  arrivalTime: string;
+  departureTime: string;
+  place: {
+    name: string;
+    placeId: string;
+    latitude: number;
+    longitude: number;
+    address: string;
+    rating?: number;
+  };
 };
 
-type StartPoint = { label: string; lat: number; lng: number; placeId?: string };
+type StartPoint = { name: string; latitude: number; longitude: number; placeId: string };
 type Prediction = { description: string; place_id: string };
 
-const allSelections = [...CORE_GROUPS, ...Object.values(SUBGROUPS).flat()] as SlotSelection[];
-const defaultStart: StartOption = { label: 'Marina Bay Sands', lat: 1.2834, lng: 103.8607 };
+const allSelections = [...CORE_GROUPS, ...Object.values(SUBGROUPS).flat()] as SlotType[];
+const defaultStart: StartPoint = { name: 'Marina Bay Sands', latitude: 1.2834, longitude: 103.8607, placeId: 'default-marina-bay-sands' };
 
 export default function PlannerPage() {
-  const [start, setStart] = useState<StartPoint>({ label: 'Marina Bay Sands', lat: 1.2834, lng: 103.8607 });
-  const [startQuery, setStartQuery] = useState('Marina Bay Sands');
+  const [startPoint, setStartPoint] = useState<StartPoint>(defaultStart);
+  const [startQuery, setStartQuery] = useState(defaultStart.name);
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [googleReady, setGoogleReady] = useState(false);
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [time, setTime] = useState(new Date().toTimeString().slice(0, 5));
-  const [includeSlots, setIncludeSlots] = useState<SlotSelection[]>(['EAT', 'DO', 'SIP']);
-  const [avoidSlots, setAvoidSlots] = useState<SlotSelection[]>([]);
+  const [slots, setSlots] = useState<SlotType[]>(['EAT', 'DO', 'SIP']);
+  const [avoidSlots, setAvoidSlots] = useState<SlotType[]>([]);
   const [result, setResult] = useState<PlanSlot[]>([]);
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
@@ -43,7 +50,7 @@ export default function PlannerPage() {
   const placesServiceRef = useRef<any>(null);
   const placesDivRef = useRef<HTMLDivElement | null>(null);
 
-  const conflicts = useMemo(() => detectConflict(includeSlots, avoidSlots), [includeSlots, avoidSlots]);
+  const conflicts = useMemo(() => detectConflict(slots, avoidSlots), [slots, avoidSlots]);
   const token = readSession()?.accessToken;
   const googleMapsKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 
@@ -82,44 +89,40 @@ export default function PlannerPage() {
       return;
     }
 
-    autocompleteServiceRef.current.getPlacePredictions(
-      { input: query, componentRestrictions: { country: 'sg' } },
-      (suggestions: Prediction[] | null, status: string) => {
-        if (status !== 'OK' || !suggestions) {
-          setPredictions([]);
-          return;
-        }
-        setPredictions(suggestions.slice(0, 6));
-      },
-    );
+    autocompleteServiceRef.current.getPlacePredictions({ input: query, componentRestrictions: { country: 'sg' } }, (suggestions: Prediction[] | null, status: string) => {
+      if (status !== 'OK' || !suggestions) {
+        setPredictions([]);
+        return;
+      }
+      setPredictions(suggestions.slice(0, 6));
+    });
   }
 
   function choosePrediction(prediction: Prediction) {
     if (!placesServiceRef.current) return;
 
-    placesServiceRef.current.getDetails(
-      { placeId: prediction.place_id, fields: ['name', 'geometry', 'place_id'] },
-      (place: any, status: string) => {
-        if (status !== 'OK' || !place?.geometry?.location) {
-          setError(`Location details failed: ${status}`);
-          return;
-        }
+    placesServiceRef.current.getDetails({ placeId: prediction.place_id, fields: ['name', 'geometry', 'place_id'] }, (place: any, status: string) => {
+      if (status !== 'OK' || !place?.geometry?.location) {
+        setError(`Location details failed: ${status}`);
+        return;
+      }
 
-        const next = {
-          label: place.name ?? prediction.description,
-          lat: place.geometry.location.lat(),
-          lng: place.geometry.location.lng(),
-          placeId: place.place_id,
-        };
+      const next = {
+        name: place.name ?? prediction.description,
+        latitude: place.geometry.location.lat(),
+        longitude: place.geometry.location.lng(),
+        placeId: place.place_id,
+      };
 
-        setStart(next);
-        setStartQuery(next.label);
-        setPredictions([]);
-        setInfo(`Start location set to ${next.label}.`);
-        setError('');
-      },
-    );
+      setStartPoint(next);
+      setStartQuery(next.name);
+      setPredictions([]);
+      setInfo(`Start location set to ${next.name}.`);
+      setError('');
+    });
   }
+
+  const payload = { startPoint, date, time, slots, avoidSlots };
 
   async function generate() {
     if (conflicts.length > 0) return setError(conflicts.join(', '));
@@ -127,7 +130,7 @@ export default function PlannerPage() {
     const response = await fetch(`${apiBaseUrl()}/itineraries/generate`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
-      body: JSON.stringify({ start, date, time, includeSlots, avoidSlots }),
+      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {
@@ -144,7 +147,7 @@ export default function PlannerPage() {
     const response = await fetch(`${apiBaseUrl()}/itineraries/regenerate-slot`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
-      body: JSON.stringify({ start, date, time, includeSlots, avoidSlots, slotIndex, existingPlaceNames: result.map((slot) => slot.placeName) }),
+      body: JSON.stringify({ ...payload, slotIndex, existingPlaceIds: result.map((slot) => slot.place.placeId) }),
     });
     if (!response.ok) {
       const text = await response.text();
@@ -161,7 +164,7 @@ export default function PlannerPage() {
     const response = await fetch(`${apiBaseUrl()}/itineraries/save`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-      body: JSON.stringify({ input: { start, date, time, includeSlots, avoidSlots }, isPublic }),
+      body: JSON.stringify({ input: payload, result, isPublic }),
     });
 
     if (!response.ok) {
@@ -176,13 +179,11 @@ export default function PlannerPage() {
     <main className="mx-auto max-w-4xl space-y-4 p-6">
       <div ref={placesDivRef} className="hidden" />
       <h1 className="text-3xl font-bold">Plan a date itinerary</h1>
-      <p className="text-slate-300">Singapore-only itinerary builder with 2-4 slots.</p>
 
       <section className="grid gap-2 rounded border border-slate-700 p-3">
         <h2 className="font-semibold">Start point</h2>
         <input value={startQuery} onChange={(event) => searchLocations(event.target.value)} placeholder="Search Singapore location" />
         {!googleMapsKey && <p className="text-amber-300 text-sm">Set NEXT_PUBLIC_GOOGLE_MAPS_API_KEY to enable Google autocomplete.</p>}
-        {googleMapsKey && !googleReady && <p className="text-slate-400 text-sm">Loading Google Places…</p>}
         {predictions.length > 0 && (
           <div className="grid gap-2">
             {predictions.map((option) => (
@@ -193,7 +194,7 @@ export default function PlannerPage() {
           </div>
         )}
         <p className="text-slate-400 text-sm">
-          Selected: {start.label} ({start.lat.toFixed(4)}, {start.lng.toFixed(4)})
+          Selected: {startPoint.name} ({startPoint.latitude.toFixed(4)}, {startPoint.longitude.toFixed(4)})
         </p>
         <div className="grid grid-cols-2 gap-3">
           <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
@@ -202,29 +203,28 @@ export default function PlannerPage() {
       </section>
 
       <section className="grid gap-2 rounded border border-slate-700 p-3">
-        <h2 className="font-semibold">Slots ({includeSlots.length}/4)</h2>
-        {includeSlots.map((slot, index) => (
+        <h2 className="font-semibold">Slots ({slots.length}/4)</h2>
+        {slots.map((slot, index) => (
           <div className="flex gap-2" key={`${slot}-${index}`}>
-            <select value={slot} onChange={(event) => setIncludeSlots((prev) => prev.map((entry, idx) => (idx === index ? (event.target.value as SlotSelection) : entry)))}>
+            <select value={slot} onChange={(event) => setSlots((prev) => prev.map((entry, idx) => (idx === index ? (event.target.value as SlotType) : entry)))}>
               {allSelections.map((option) => (
                 <option key={option}>{option}</option>
               ))}
             </select>
-            <button onClick={() => index > 0 && setIncludeSlots((prev) => { const next = [...prev]; [next[index], next[index - 1]] = [next[index - 1], next[index]]; return next; })}>↑</button>
-            <button onClick={() => index < includeSlots.length - 1 && setIncludeSlots((prev) => { const next = [...prev]; [next[index], next[index + 1]] = [next[index + 1], next[index]]; return next; })}>↓</button>
-            <button onClick={() => includeSlots.length > 2 && setIncludeSlots((prev) => prev.filter((_, i) => i !== index))}>Remove</button>
+            <button onClick={() => index > 0 && setSlots((prev) => { const next = [...prev]; [next[index], next[index - 1]] = [next[index - 1], next[index]]; return next; })}>↑</button>
+            <button onClick={() => index < slots.length - 1 && setSlots((prev) => { const next = [...prev]; [next[index], next[index + 1]] = [next[index + 1], next[index]]; return next; })}>↓</button>
+            <button onClick={() => slots.length > 2 && setSlots((prev) => prev.filter((_, i) => i !== index))}>Remove</button>
           </div>
         ))}
-        <button onClick={() => includeSlots.length < 4 && setIncludeSlots((prev) => [...prev, 'DO'])}>Add slot</button>
+        <button onClick={() => slots.length < 4 && setSlots((prev) => [...prev, 'DO'])}>Add slot</button>
       </section>
 
       <section className="grid gap-2 rounded border border-slate-700 p-3">
         <h2 className="font-semibold">Avoid categories</h2>
-        <select onChange={(event) => event.target.value && setAvoidSlots((prev) => [...prev, event.target.value as SlotSelection])} defaultValue="">
+        <select onChange={(event) => event.target.value && setAvoidSlots((prev) => [...prev, event.target.value as SlotType])} defaultValue="">
           <option value="" disabled>Add avoid slot</option>
           {allSelections.map((option) => <option key={option}>{option}</option>)}
         </select>
-        <div className="flex flex-wrap gap-2">{avoidSlots.map((slot, idx) => <button key={`${slot}-${idx}`} onClick={() => setAvoidSlots((prev) => prev.filter((_, i) => i !== idx))}>{slot} ×</button>)}</div>
       </section>
 
       <div className="flex gap-2">
@@ -232,7 +232,6 @@ export default function PlannerPage() {
         <button onClick={() => save(false)} disabled={!token || result.length === 0}>Save private</button>
         <button onClick={() => save(true)} disabled={!token || result.length === 0}>Save public</button>
       </div>
-      {!token && <p className="text-slate-400 text-sm">You can generate as guest. Login is required only for saving itineraries.</p>}
 
       {conflicts.length > 0 && <p className="text-amber-300">Conflicts: {conflicts.join(', ')}</p>}
       {error && <p className="text-rose-300">{error}</p>}
@@ -242,9 +241,10 @@ export default function PlannerPage() {
         <h2 className="font-semibold">Generated itinerary</h2>
         {result.length === 0 && <p className="text-slate-400">No itinerary generated yet.</p>}
         {result.map((slot, index) => (
-          <article key={`${slot.placeName}-${index}`} className="rounded border border-slate-700 p-3">
-            <p className="font-semibold">{index + 1}. {slot.placeName}</p>
-            <p>{slot.subgroup} · travel {slot.travelMinutes} mins · arrive +{slot.startOffsetMin} mins · stay {slot.durationMin} mins</p>
+          <article key={`${slot.place.placeId}-${index}`} className="rounded border border-slate-700 p-3">
+            <p className="font-semibold">{index + 1}. {slot.place.name}</p>
+            <p>{slot.subgroup} · travel {slot.travelMinutes} mins</p>
+            <p>{new Date(slot.arrivalTime).toLocaleTimeString()} - {new Date(slot.departureTime).toLocaleTimeString()}</p>
             <button onClick={() => regenerateSlot(index)}>Regenerate this slot</button>
           </article>
         ))}

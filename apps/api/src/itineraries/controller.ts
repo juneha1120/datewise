@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Headers, Param, Post, UnauthorizedException } from '@nestjs/common';
-import { GenerateItineraryInput, RegenerateSlotInput } from '@datewise/shared';
+import { type GenerateItineraryInput, type ItinerarySlot, type RegenerateSlotInput } from '@datewise/shared';
 import { randomUUID } from 'node:crypto';
 import { AuthService } from '../auth/service';
 import { db } from '../db';
@@ -27,9 +27,12 @@ export class ItinerariesController {
   }
 
   @Post('save')
-  async save(@Headers('authorization') authorization: string | undefined, @Body() body: { input: GenerateItineraryInput; isPublic: boolean }) {
+  async save(
+    @Headers('authorization') authorization: string | undefined,
+    @Body() body: { input: GenerateItineraryInput; result: ItinerarySlot[]; isPublic: boolean },
+  ) {
     const userId = await this.userIdFromHeader(authorization);
-    return this.generator.saveGenerated(userId, body.input, body.isPublic);
+    return this.generator.saveGenerated(userId, body.input, body.result, body.isPublic);
   }
 
   @Get('mine')
@@ -53,7 +56,7 @@ export class ItinerariesController {
       userId,
       sourceItineraryId: source.id,
       sourceUserId: source.userId,
-      snapshot: { ...source, slots: source.slots.map((slot) => ({ ...slot })) },
+      snapshot: { ...source, result: source.result.map((slot) => ({ ...slot, place: { ...slot.place } })) },
       createdAt: new Date().toISOString(),
     };
     db.saved.set(saved.id, saved);
