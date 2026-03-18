@@ -33,14 +33,4 @@ npm run build
 ## Notes
 - Backend currently uses deterministic in-memory persistence for local iteration in `apps/api/src/db.ts`.
 - Production target PostgreSQL schema is available at `apps/api/prisma/schema.prisma`.
-- API contracts are documented in `docs/04_API_SPEC.md`.
-
-
-## Guest generation
-- Users can generate/regenerate itineraries without logging in.
-- Saving itineraries (own/public copy) still requires login.
-
-## Persistence recommendation
-- Current local dev uses in-memory users/itineraries.
-- For production and admin visibility of users, use PostgreSQL (via Prisma schema in `apps/api/prisma/schema.prisma`) and optionally Supabase Postgres as the managed DB.
-- Supabase Auth can still be used as identity provider, but the app should persist user records in its own DB tables for queryability/auditing.
+- API contracts are documented in `docs/DATEWISE_API_SPEC.md`.
