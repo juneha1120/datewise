@@ -18,14 +18,23 @@ test('rejects forged bearer tokens', async () => {
   db.saved.clear();
 });
 
-test('creates a Google-authenticated session from profile details', async () => {
+test('creates a Google-authenticated session from a verified Google ID token', async () => {
   const auth = new AuthService();
+  const originalFetch = global.fetch;
 
-  const { token, user } = await auth.googleLogin({
-    email: 'google-user@example.com',
-    displayName: 'Google User',
-    profileImage: 'https://images.example.com/avatar.png',
-  });
+  global.fetch = (async () =>
+    new Response(
+      JSON.stringify({
+        email: 'google-user@example.com',
+        email_verified: 'true',
+        name: 'Google User',
+        picture: 'https://images.example.com/avatar.png',
+        iss: 'https://accounts.google.com',
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    )) as typeof fetch;
+
+  const { token, user } = await auth.googleLogin({ idToken: 'valid-token' });
   const me = await auth.getMe(token);
 
   assert.equal(user.email, 'google-user@example.com');
@@ -33,6 +42,30 @@ test('creates a Google-authenticated session from profile details', async () => 
   assert.equal(user.profileImage, 'https://images.example.com/avatar.png');
   assert.equal(me.id, user.id);
 
+  global.fetch = originalFetch;
+  db.users.clear();
+  db.itineraries.clear();
+  db.saved.clear();
+});
+
+test('rejects unverified Google email claims', async () => {
+  const auth = new AuthService();
+  const originalFetch = global.fetch;
+
+  global.fetch = (async () =>
+    new Response(
+      JSON.stringify({
+        email: 'google-user@example.com',
+        email_verified: 'false',
+        name: 'Google User',
+        iss: 'https://accounts.google.com',
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    )) as typeof fetch;
+
+  await assert.rejects(() => auth.googleLogin({ idToken: 'invalid-token' }), /verified/);
+
+  global.fetch = originalFetch;
   db.users.clear();
   db.itineraries.clear();
   db.saved.clear();
