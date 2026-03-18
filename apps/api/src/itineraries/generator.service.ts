@@ -7,6 +7,7 @@ import {
   detectConflict,
   expandSelection,
   generateItineraryInputSchema,
+  itinerarySlotSchema,
   regenerateSlotInputSchema,
   resolveCore,
   type SlotType,
@@ -138,12 +139,16 @@ export class GeneratorService {
   }
 
   async saveGenerated(userId: string, input: GenerateItineraryInput, result: ItinerarySlot[], isPublic: boolean) {
+    const parsedInput = generateItineraryInputSchema.parse(input);
+    // Validate client payload for compatibility while persisting a server-generated canonical result.
+    itinerarySlotSchema.array().parse(result);
+    const normalizedResult = await this.generate(parsedInput);
     const now = new Date().toISOString();
     const itinerary = {
       id: randomUUID(),
       userId,
-      input,
-      result,
+      input: parsedInput,
+      result: normalizedResult,
       isPublic,
       createdAt: now,
       updatedAt: now,
