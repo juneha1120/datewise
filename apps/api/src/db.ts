@@ -1,3 +1,5 @@
+import type { GenerateItineraryInput, ItineraryRecord, ItinerarySlot } from '@datewise/shared';
+
 export type User = {
   id: string;
   email: string;
@@ -7,52 +9,22 @@ export type User = {
   provider: 'EMAIL' | 'GOOGLE';
 };
 
-export type ItinerarySlot = {
-  slotIndex: number;
-  selection: string;
-  slotType?: string;
-  placeName: string;
-  place?: {
-    name: string;
-    placeId: string;
-    latitude: number;
-    longitude: number;
-    address: string;
-    rating?: number;
-  };
-  subgroup: string;
-  travelMinutes: number;
-  startOffsetMin: number;
-  durationMin: number;
-  arrivalTime?: string;
-  departureTime?: string;
-  lat: number;
-  lng: number;
-};
-
-export type ItineraryRecord = {
-  id: string;
-  userId: string;
-  title: string;
-  isPublic: boolean;
-  inputJson: string;
-  edited: boolean;
-  sourceId: string | null;
-  slots: ItinerarySlot[];
-  createdAt: string;
-};
-
 export type SavedRecord = {
   id: string;
   userId: string;
   sourceItineraryId: string;
-  snapshot: ItineraryRecord;
   sourceUserId: string;
+  snapshot: ItineraryRecord;
   createdAt: string;
+};
+
+export type PersistedItinerary = ItineraryRecord & {
+  input: GenerateItineraryInput;
+  result: ItinerarySlot[];
 };
 
 export const db = {
   users: new Map<string, User>(),
-  itineraries: new Map<string, ItineraryRecord>(),
+  itineraries: new Map<string, PersistedItinerary>(),
   saved: new Map<string, SavedRecord>(),
 };

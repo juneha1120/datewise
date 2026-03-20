@@ -4,8 +4,8 @@ import { useState } from 'react';
 import { apiBaseUrl, readSession } from '../../lib/auth';
 
 type User = { id: string; email: string; displayName: string; profileImage: string | null };
-type Itinerary = { id: string; title: string; createdAt: string; isPublic: boolean; slots: Array<{ placeName: string }> };
-type Saved = { id: string; sourceItineraryId: string; createdAt: string; snapshot: { title: string } };
+type Itinerary = { id: string; createdAt: string; isPublic: boolean; result: Array<{ place: { name: string } }> };
+type Saved = { id: string; sourceItineraryId: string; createdAt: string; snapshot: { id: string } };
 
 export default function ProfilePage() {
   const [user, setUser] = useState<User | null>(null);
@@ -13,7 +13,6 @@ export default function ProfilePage() {
   const [saved, setSaved] = useState<Saved[]>([]);
   const [displayName, setDisplayName] = useState('');
   const [error, setError] = useState('');
-  const [info, setInfo] = useState('');
 
   async function load() {
     const token = readSession()?.accessToken;
@@ -51,11 +50,8 @@ export default function ProfilePage() {
       return setError(`Failed to save username: ${text}`);
     }
 
-    const updated = (await response.json()) as User;
-    setUser(updated);
-    setDisplayName(updated.displayName);
+    setUser((await response.json()) as User);
     setError('');
-    setInfo('Username updated.');
   }
 
   return (
@@ -63,11 +59,8 @@ export default function ProfilePage() {
       <h1 className="text-3xl font-bold">Profile</h1>
       <button onClick={load}>Refresh profile data</button>
       {error && <p className="text-rose-300">{error}</p>}
-      {info && <p className="text-emerald-300">{info}</p>}
 
-      {!user ? (
-        <p className="text-slate-400">No profile loaded.</p>
-      ) : (
+      {user && (
         <section className="space-y-2 rounded border border-slate-700 p-3">
           <p>{user.email}</p>
           <div className="flex gap-2">
@@ -81,10 +74,8 @@ export default function ProfilePage() {
         <h2 className="font-semibold">My itineraries ({mine.length})</h2>
         {mine.map((item) => (
           <article key={item.id} className="rounded border border-slate-700 p-3">
-            <p>{item.title}</p>
-            <p>
-              {item.isPublic ? 'Public' : 'Private'} · {item.slots.length} slots
-            </p>
+            <p>{item.id}</p>
+            <p>{item.isPublic ? 'Public' : 'Private'} · {item.result.length} slots</p>
           </article>
         ))}
       </section>
@@ -93,7 +84,7 @@ export default function ProfilePage() {
         <h2 className="font-semibold">Saved public copies ({saved.length})</h2>
         {saved.map((item) => (
           <article key={item.id} className="rounded border border-slate-700 p-3">
-            <p>{item.snapshot.title}</p>
+            <p>{item.snapshot.id}</p>
             <p>Saved copy of itinerary {item.sourceItineraryId}</p>
           </article>
         ))}

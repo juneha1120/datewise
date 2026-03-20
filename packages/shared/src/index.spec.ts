@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { detectConflict, generateItinerarySchema, resolveCore } from './index';
 
 test('detects subgroup conflict', () => {
-  assert.deepEqual(detectConflict(['JAPANESE'], ['EAT']), ['includeSlots[0] conflicts with avoid slots']);
+  assert.deepEqual(detectConflict(['JAPANESE'], ['EAT']), ['slots[0] conflicts with avoidSlots']);
 });
 
 test('resolves core from subgroup', () => {
@@ -13,10 +13,10 @@ test('resolves core from subgroup', () => {
 test('rejects conflict through schema', () => {
   assert.throws(() =>
     generateItinerarySchema.parse({
-      start: { label: 'A', lat: 1.2, lng: 103.2 },
+      startPoint: { name: 'A', latitude: 1.2, longitude: 103.2, placeId: 'p1' },
       date: '2026-01-01',
       time: '18:00',
-      includeSlots: ['EAT', 'COFFEE'],
+      slots: ['EAT', 'COFFEE'],
       avoidSlots: ['EAT'],
     }),
   );

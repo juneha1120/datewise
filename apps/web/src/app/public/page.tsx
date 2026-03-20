@@ -5,15 +5,13 @@ import { apiBaseUrl, readSession } from '../../lib/auth';
 
 type PublicItem = {
   id: string;
-  title: string;
   createdAt: string;
-  slots: Array<{ placeName: string; subgroup: string }>;
+  result: Array<{ place: { name: string }; subgroup: string }>;
 };
 
 export default function PublicPage() {
   const [items, setItems] = useState<PublicItem[]>([]);
   const [error, setError] = useState('');
-  const [info, setInfo] = useState('');
 
   async function refresh() {
     const response = await fetch(`${apiBaseUrl()}/itineraries/public`);
@@ -38,8 +36,6 @@ export default function PublicPage() {
       const text = await response.text();
       return setError(`Failed to save copy: ${text}`);
     }
-    setError('');
-    setInfo('Saved a copy to your account.');
   }
 
   return (
@@ -47,26 +43,21 @@ export default function PublicPage() {
       <h1 className="text-3xl font-bold">Public itineraries</h1>
       <button onClick={refresh}>Refresh</button>
       {error && <p className="text-rose-300">{error}</p>}
-      {info && <p className="text-emerald-300">{info}</p>}
 
-      {items.length === 0 ? (
-        <p className="text-slate-400">No public itineraries loaded.</p>
-      ) : (
-        items.map((item) => (
-          <article key={item.id} className="rounded border border-slate-700 p-3">
-            <p className="font-semibold">{item.title}</p>
-            <p>{new Date(item.createdAt).toLocaleString()}</p>
-            <ul>
-              {item.slots.map((slot, idx) => (
-                <li key={`${slot.placeName}-${idx}`}>
-                  {idx + 1}. {slot.placeName} ({slot.subgroup})
-                </li>
-              ))}
-            </ul>
-            <button onClick={() => saveCopy(item.id)}>Save copy</button>
-          </article>
-        ))
-      )}
+      {items.map((item) => (
+        <article key={item.id} className="rounded border border-slate-700 p-3">
+          <p className="font-semibold">Public itinerary {item.id.slice(0, 8)}</p>
+          <p>{new Date(item.createdAt).toLocaleString()}</p>
+          <ul>
+            {item.result.map((slot, idx) => (
+              <li key={`${slot.place.name}-${idx}`}>
+                {idx + 1}. {slot.place.name} ({slot.subgroup})
+              </li>
+            ))}
+          </ul>
+          <button onClick={() => saveCopy(item.id)}>Save copy</button>
+        </article>
+      ))}
     </main>
   );
 }
