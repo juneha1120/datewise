@@ -1,21 +1,30 @@
 'use client';
 
-import { useState } from 'react';
-import { apiBaseUrl, readSession } from '../../lib/auth';
+import { useEffect, useState } from 'react';
+import { apiBaseUrl, readSession, signOut } from '../../lib/auth';
 
 type User = { id: string; email: string; displayName: string; profileImage: string | null };
 type Itinerary = { id: string; createdAt: string; isPublic: boolean; result: Array<{ place: { name: string } }> };
 type Saved = { id: string; sourceItineraryId: string; createdAt: string; snapshot: { id: string } };
 
 export default function ProfilePage() {
+  const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [mine, setMine] = useState<Itinerary[]>([]);
   const [saved, setSaved] = useState<Saved[]>([]);
   const [displayName, setDisplayName] = useState('');
   const [error, setError] = useState('');
 
+  useEffect(() => {
+    const session = readSession();
+    if (!session?.accessToken) {
+      location.href = '/login?next=/profile';
+      return;
+    }
+    setToken(session.accessToken);
+  }, []);
+
   async function load() {
-    const token = readSession()?.accessToken;
     if (!token) return setError('Please login first');
 
     const headers = { authorization: `Bearer ${token}` };
@@ -36,7 +45,6 @@ export default function ProfilePage() {
   }
 
   async function saveDisplayName() {
-    const token = readSession()?.accessToken;
     if (!token) return setError('Please login first');
 
     const response = await fetch(`${apiBaseUrl()}/auth/display-name`, {
@@ -54,10 +62,28 @@ export default function ProfilePage() {
     setError('');
   }
 
+  if (!token) {
+    return (
+      <main className="mx-auto max-w-3xl space-y-4 p-6">
+        <p className="text-slate-300">Redirecting to login...</p>
+      </main>
+    );
+  }
+
   return (
     <main className="mx-auto max-w-3xl space-y-4 p-6">
       <h1 className="text-3xl font-bold">Profile</h1>
-      <button onClick={load}>Refresh profile data</button>
+      <div className="flex gap-2">
+        <button onClick={load}>Refresh profile data</button>
+        <button
+          onClick={() => {
+            signOut();
+            location.href = '/login';
+          }}
+        >
+          Logout
+        </button>
+      </div>
       {error && <p className="text-rose-300">{error}</p>}
 
       {user && (

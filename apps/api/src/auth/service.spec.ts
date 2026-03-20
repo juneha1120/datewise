@@ -95,6 +95,66 @@ test('allows updating display name after signup', async () => {
   db.saved.clear();
 });
 
+test('supports signup and login flow for email accounts', async () => {
+  const auth = new AuthService();
+  const { user: signedUp } = await auth.signup({ email: 'email-user@example.com', password: 'pw123' });
+  const { token, user: loggedIn } = await auth.login({ email: 'email-user@example.com', password: 'pw123' });
+  const me = await auth.getMe(token);
+
+  assert.equal(loggedIn.id, signedUp.id);
+  assert.equal(me.email, 'email-user@example.com');
+  assert.equal(me.id, signedUp.id);
+
+  await assert.rejects(() => auth.signup({ email: 'email-user@example.com', password: 'pw123' }), /already registered/);
+
+  db.users.clear();
+  db.itineraries.clear();
+  db.saved.clear();
+});
+
+test('google login updates existing profile while preserving avatar when omitted', async () => {
+  const auth = new AuthService();
+  const originalFetch = global.fetch;
+
+  let responseMode: 'first' | 'second' = 'first';
+  global.fetch = (async () => {
+    if (responseMode === 'first') {
+      return new Response(
+        JSON.stringify({
+          email: 'repeat-google@example.com',
+          email_verified: 'true',
+          name: 'Original Name',
+          picture: 'https://images.example.com/original.png',
+          iss: 'https://accounts.google.com',
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }
+    return new Response(
+      JSON.stringify({
+        email: 'repeat-google@example.com',
+        email_verified: 'true',
+        name: 'Updated Name',
+        iss: 'https://accounts.google.com',
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
+  }) as typeof fetch;
+
+  const firstLogin = await auth.googleLogin({ idToken: 'first-token' });
+  responseMode = 'second';
+  const secondLogin = await auth.googleLogin({ idToken: 'second-token' });
+
+  assert.equal(firstLogin.user.id, secondLogin.user.id);
+  assert.equal(secondLogin.user.displayName, 'Updated Name');
+  assert.equal(secondLogin.user.profileImage, 'https://images.example.com/original.png');
+
+  global.fetch = originalFetch;
+  db.users.clear();
+  db.itineraries.clear();
+  db.saved.clear();
+});
+
 
 test('returns local session expired when token belongs to cleared in-memory user', async () => {
   const auth = new AuthService();

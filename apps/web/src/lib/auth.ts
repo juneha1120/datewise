@@ -64,3 +64,14 @@ export async function signIn(email: string, password: string): Promise<AuthSessi
   writeSession(session);
   return session;
 }
+
+export async function signInWithGoogle(idToken: string): Promise<AuthSession> {
+  const data = await apiPost('/auth/google', { idToken });
+  const session = sessionFromAuthResponse(data);
+  writeSession(session);
+  return session;
+}
+
+export function signOut() {
+  clearSession();
+}

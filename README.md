@@ -22,7 +22,9 @@ npm run build
 ```
 
 ## Auth behavior
-- Frontend primary auth uses Datewise API endpoints (`/auth/signup`, `/auth/login`) for local email/password flows.
+- Frontend auth supports email/password (`/auth/signup`, `/auth/login`) and Google Sign-In (`/auth/google` with Google ID token).
+- Protected frontend pages (`/planner`, `/profile`, `/saved`) redirect to `/login` when no session exists in local storage.
+- Logout is available from the Profile page and clears local session state.
 - API uses in-memory users in local dev; if the API restarts, sign in again to refresh session state.
 - API can also validate Supabase bearer tokens via `/auth/v1/user` when Supabase env vars are configured.
 

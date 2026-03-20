@@ -4,12 +4,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { detectConflict, CORE_GROUPS, SUBGROUPS, type SlotType } from '@datewise/shared';
 import { apiBaseUrl, readSession } from '../../lib/auth';
 
-declare global {
-  interface Window {
-    google?: any;
-  }
-}
-
 type PlanSlot = {
   slotIndex: number;
   slotType: SlotType;
@@ -34,6 +28,7 @@ const allSelections = [...CORE_GROUPS, ...Object.values(SUBGROUPS).flat()] as Sl
 const defaultStart: StartPoint = { name: 'Marina Bay Sands', latitude: 1.2834, longitude: 103.8607, placeId: 'default-marina-bay-sands' };
 
 export default function PlannerPage() {
+  const [token, setToken] = useState<string | null>(null);
   const [startPoint, setStartPoint] = useState<StartPoint>(defaultStart);
   const [startQuery, setStartQuery] = useState(defaultStart.name);
   const [predictions, setPredictions] = useState<Prediction[]>([]);
@@ -51,20 +46,29 @@ export default function PlannerPage() {
   const placesDivRef = useRef<HTMLDivElement | null>(null);
 
   const conflicts = useMemo(() => detectConflict(slots, avoidSlots), [slots, avoidSlots]);
-  const token = readSession()?.accessToken;
   const googleMapsKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+
+  useEffect(() => {
+    const session = readSession();
+    if (!session?.accessToken) {
+      location.href = '/login?next=/planner';
+      return;
+    }
+    setToken(session.accessToken);
+  }, []);
 
   useEffect(() => {
     if (!googleMapsKey) return;
 
     function initServices() {
-      if (!window.google?.maps?.places || !placesDivRef.current) return;
-      autocompleteServiceRef.current = new window.google.maps.places.AutocompleteService();
-      placesServiceRef.current = new window.google.maps.places.PlacesService(placesDivRef.current);
+      const googleMaps = (window as Window & { google?: any }).google;
+      if (!googleMaps?.maps?.places || !placesDivRef.current) return;
+      autocompleteServiceRef.current = new googleMaps.maps.places.AutocompleteService();
+      placesServiceRef.current = new googleMaps.maps.places.PlacesService(placesDivRef.current);
       setGoogleReady(true);
     }
 
-    if (window.google?.maps?.places) {
+    if ((window as Window & { google?: any }).google?.maps?.places) {
       initServices();
       return;
     }
@@ -173,6 +177,14 @@ export default function PlannerPage() {
     }
     setError('');
     setInfo(isPublic ? 'Saved to public itineraries.' : 'Saved to your profile itineraries.');
+  }
+
+  if (!token) {
+    return (
+      <main className="mx-auto max-w-4xl space-y-4 p-6">
+        <p className="text-slate-300">Redirecting to login...</p>
+      </main>
+    );
   }
 
   return (
