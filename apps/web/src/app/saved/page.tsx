@@ -43,11 +43,11 @@ export default function SavedPage() {
   }, []);
 
   return (
-    <main className="cards-grid">
-      <section className="hero">
+    <main className="page-stack">
+      <section className="hero hero-compact">
         <p className="eyebrow">Saved itineraries</p>
-        <h1 className="page-title">Your copied public routes live here as snapshots.</h1>
-        <p className="lede">Private itineraries you create yourself are listed on the profile page. This page focuses on saved public copies.</p>
+        <h1 className="page-title">Saved public snapshots.</h1>
+        <p className="lede">Quick access to copied public routes.</p>
         <div className="actions">
           <Link href="/profile" className="button-primary">Open profile</Link>
           <Link href="/public" className="button-secondary">Browse public itineraries</Link>
@@ -68,8 +68,7 @@ export default function SavedPage() {
                 </div>
                 <span className="status-pill">{new Date(item.createdAt).toLocaleString()}</span>
               </div>
-
-              <p className="helper">Copied from public itinerary {item.sourceItineraryId.slice(0, 8)}.</p>
+              <p className="muted-line">Source {item.sourceItineraryId.slice(0, 8)}</p>
               <div className="plain-list">
                 {item.snapshot.result.map((slot, idx) => (
                   <div key={`${slot.place.name}-${idx}`} className="simple-row">

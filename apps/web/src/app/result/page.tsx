@@ -18,12 +18,10 @@ export default function ResultPage() {
 
   return (
     <main className="page-stack">
-      <section className="hero">
+      <section className="hero hero-compact">
         <p className="eyebrow">Latest result</p>
-        <h1 className="page-title">Your most recently generated itinerary lives here too.</h1>
-        <p className="lede">
-          The planner is still the main generation surface, but this page now gives you a quick standalone view of the latest route generated in this browser.
-        </p>
+        <h1 className="page-title">Latest generated route.</h1>
+        <p className="lede">A quick view of the most recent itinerary in this browser.</p>
         <div className="actions">
           <Link href="/planner" className="button-primary">Open planner</Link>
         </div>
@@ -39,17 +37,15 @@ export default function ResultPage() {
             <article className="panel">
               <p className="eyebrow">Requested input</p>
               <h2 className="section-title">{latest.input.startPoint.name}</h2>
-              <p className="helper">
-                {latest.input.date} at {latest.input.time}
-              </p>
-              <p className="helper">Slots: {latest.input.slots.join(', ')}</p>
-              <p className="helper">Avoided: {latest.input.avoidSlots.join(', ') || 'None'}</p>
+              <p className="muted-line">{latest.input.date} at {latest.input.time}</p>
+              <p className="muted-line">{latest.input.slots.join(' · ')}</p>
+              <p className="muted-line">Avoided: {latest.input.avoidSlots.join(', ') || 'None'}</p>
             </article>
 
             <article className="panel">
               <p className="eyebrow">Snapshot</p>
               <h2 className="section-title">{new Date(latest.savedAt).toLocaleString()}</h2>
-              <p className="helper">{latest.result.length} planned stops in the current browser snapshot.</p>
+              <p className="muted-line">{latest.result.length} stops</p>
             </article>
           </section>
 
@@ -75,9 +71,7 @@ export default function ResultPage() {
                       <span className="status-pill">{slot.travelMinutes} min travel</span>
                     </div>
                   </div>
-                  <p className="meta">
-                    {formatClock(slot.arrivalTime)} - {formatClock(slot.departureTime)}. Rating: {slot.place.rating?.toFixed(1) ?? 'N/A'}.
-                  </p>
+                  <p className="meta">{formatClock(slot.arrivalTime)} - {formatClock(slot.departureTime)} · {slot.place.rating?.toFixed(1) ?? 'N/A'}</p>
                 </article>
               ))}
             </div>

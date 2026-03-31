@@ -3,14 +3,26 @@ import Link from 'next/link';
 export default function HomePage() {
   return (
     <main className="page-stack">
-      <section className="hero">
+      <section className="hero hero-compact">
         <div className="field-stack">
           <p className="eyebrow">MVP v1</p>
-          <h1 className="display-title">Build a full Singapore date in minutes.</h1>
-          <p className="lede">
-            Pick a starting point, set the time, choose between 2 and 4 date slots, and let Datewise generate a practical route that respects
-            category preferences, opening hours, and travel distance.
-          </p>
+          <h1 className="display-title">Plan a date in minutes.</h1>
+          <p className="lede">Choose a start point, pick the flow, and get a Singapore route with food, activities, and drinks.</p>
+        </div>
+
+        <div className="metrics-row">
+          <div className="metric">
+            <strong>2-4</strong>
+            <span>ordered stops</span>
+          </div>
+          <div className="metric">
+            <strong>SG</strong>
+            <span>Singapore only</span>
+          </div>
+          <div className="metric">
+            <strong>1 tap</strong>
+            <span>save or publish</span>
+          </div>
         </div>
 
         <div className="actions">
@@ -22,26 +34,26 @@ export default function HomePage() {
       <section className="stats-grid">
         <article className="card">
           <p className="eyebrow">Builder</p>
-          <h2 className="card-title">Ordered slots with real constraints</h2>
-          <p className="section-copy">Reorder date stops, mix core groups and subgroups, and block categories you do not want.</p>
+          <h2 className="card-title">Build the flow</h2>
+          <p className="section-copy">Reorder stops and mix broad or specific categories.</p>
         </article>
         <article className="card">
           <p className="eyebrow">Results</p>
-          <h2 className="card-title">Generated timeline with regeneration</h2>
-          <p className="section-copy">Swap a single stop or regenerate the full plan while keeping the rest of your structure intact.</p>
+          <h2 className="card-title">Regenerate fast</h2>
+          <p className="section-copy">Swap one stop or refresh the full route.</p>
         </article>
         <article className="card">
           <p className="eyebrow">Library</p>
-          <h2 className="card-title">Private saves and public discovery</h2>
-          <p className="section-copy">Save your own routes, publish the best ones, and keep copied public snapshots even if the original changes.</p>
+          <h2 className="card-title">Save and share</h2>
+          <p className="section-copy">Keep private plans or save public snapshots.</p>
         </article>
       </section>
 
       <section className="panel">
         <div className="section-heading">
           <div>
-            <p className="eyebrow">Core pages</p>
-            <h2 className="page-title">Everything from the spec is wired in</h2>
+            <p className="eyebrow">Explore</p>
+            <h2 className="section-title section-title-lg">Jump to the main flows</h2>
           </div>
         </div>
         <div className="actions">

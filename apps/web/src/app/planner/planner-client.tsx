@@ -344,12 +344,24 @@ export default function PlannerClient({ googleMapsKey }: { googleMapsKey: string
       <div ref={placesDivRef} hidden />
 
       <section className="planner-shell">
-        <article className="hero">
+        <article className="hero hero-compact">
           <p className="eyebrow">Generate itinerary</p>
-          <h1 className="page-title">Design the route, then let the engine pick the stops.</h1>
-          <p className="lede">
-            The planner uses your starting point, selected date and time, ordered slots, and avoid rules to generate one practical Singapore-only date route.
-          </p>
+          <h1 className="page-title">Build the route.</h1>
+          <p className="lede">Set a start point, choose the flow, and generate a date plan.</p>
+          <div className="metrics-row">
+            <div className="metric">
+              <strong>{slots.length}</strong>
+              <span>stops</span>
+            </div>
+            <div className="metric">
+              <strong>{avoidSlots.length}</strong>
+              <span>blocked</span>
+            </div>
+            <div className="metric">
+              <strong>{result.length || '-'}</strong>
+              <span>generated</span>
+            </div>
+          </div>
           <div className="actions">
             <button className="button-primary" onClick={generate} disabled={isLoading}>
               {isLoading ? 'Working...' : 'Generate itinerary'}
@@ -381,7 +393,7 @@ export default function PlannerClient({ googleMapsKey }: { googleMapsKey: string
                     onChange={(event) => searchLocations(event.target.value)}
                     placeholder="Search for a Singapore location"
                   />
-                  {!googleMapsKey && <p className="helper">Set `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` to enable Google Maps autocomplete.</p>}
+                  {!googleMapsKey && <p className="helper">Add a Google Maps key to enable autocomplete.</p>}
                 </div>
 
                 <div className="inline-actions">
@@ -398,9 +410,7 @@ export default function PlannerClient({ googleMapsKey }: { googleMapsKey: string
                   </div>
                 )}
 
-                <p className="helper">
-                  Selected start: {startPoint.name} ({startPoint.latitude.toFixed(4)}, {startPoint.longitude.toFixed(4)})
-                </p>
+                <p className="helper">Selected: {startPoint.name}</p>
 
                 <div className="grid-2">
                   <div className="field">
@@ -426,15 +436,15 @@ export default function PlannerClient({ googleMapsKey }: { googleMapsKey: string
               <div className="plain-list">
                 <div className="simple-row">
                   <strong>{slots.length} slots</strong>
-                  <p className="helper">Minimum 2, maximum 4. The current builder starts with the default EAT, DO, SIP flow.</p>
+                  <p className="helper">Choose between 2 and 4 stops.</p>
                 </div>
                 <div className="simple-row">
-                  <strong>{avoidSlots.length} avoided categories</strong>
-                  <p className="helper">Avoid a full core group or a specific subgroup. Conflicting include and avoid rules block generation.</p>
+                  <strong>{avoidSlots.length} blocked</strong>
+                  <p className="helper">Conflicting rules stop generation.</p>
                 </div>
                 <div className="simple-row">
-                  <strong>Travel-aware ordering</strong>
-                  <p className="helper">The generator prefers open places with strong category match and shorter travel time from the previous stop.</p>
+                  <strong>Travel-aware</strong>
+                  <p className="helper">Closer and open places are preferred.</p>
                 </div>
               </div>
             </article>
@@ -470,7 +480,7 @@ export default function PlannerClient({ googleMapsKey }: { googleMapsKey: string
                       <div className="field-stack">
                         <span className="slot-handle">Drag to reorder</span>
                         <strong>Stop {index + 1}</strong>
-                        <p className="helper">Current preference: {subgroupSummary(slot)}</p>
+                        <p className="helper">{subgroupSummary(slot)}</p>
                       </div>
                       <div className="inline-actions">
                         <button className="mini-button" onClick={() => reorderSlots(index, index - 1)} disabled={index === 0} type="button">Up</button>
@@ -524,7 +534,7 @@ export default function PlannerClient({ googleMapsKey }: { googleMapsKey: string
                 </div>
 
                 {avoidSlots.length === 0 ? (
-                  <div className="empty-state">No avoid rules yet.</div>
+                  <div className="empty-state">No blocked categories.</div>
                 ) : (
                   <div className="tag-row">
                     {avoidSlots.map((value) => (
@@ -557,7 +567,7 @@ export default function PlannerClient({ googleMapsKey }: { googleMapsKey: string
             {conflicts.length > 0 && <p className="status-message error">Conflicts: {conflicts.join(', ')}</p>}
             {error && <p className="status-message error">{error}</p>}
             {info && <p className="status-message success">{info}</p>}
-            {!token && <p className="helper">Login is required only for save actions. You can generate itineraries without signing in.</p>}
+            {!token && <p className="helper">Login only matters for saving.</p>}
           </section>
 
           <section className="panel">
@@ -569,7 +579,7 @@ export default function PlannerClient({ googleMapsKey }: { googleMapsKey: string
             </div>
 
             {result.length === 0 ? (
-              <div className="empty-state">No itinerary generated yet. Choose your slots and click generate.</div>
+              <div className="empty-state">Generate to see your route.</div>
             ) : (
               <div className="timeline">
                 {result.map((slot, index) => (
@@ -593,10 +603,7 @@ export default function PlannerClient({ googleMapsKey }: { googleMapsKey: string
                       <span className="status-pill">{slot.travelMinutes} min travel</span>
                       <span className="status-pill">{formatClock(slot.arrivalTime)} - {formatClock(slot.departureTime)}</span>
                     </div>
-
-                    <p className="meta">
-                      Slot type: {slot.slotType}. Rating: {slot.place.rating?.toFixed(1) ?? 'N/A'}.
-                    </p>
+                    <p className="meta">Rating {slot.place.rating?.toFixed(1) ?? 'N/A'}</p>
                   </article>
                 ))}
               </div>

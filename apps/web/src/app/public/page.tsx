@@ -62,11 +62,11 @@ export default function PublicPage() {
   }
 
   return (
-    <main className="cards-grid">
-      <section className="hero">
+    <main className="page-stack">
+      <section className="hero hero-compact">
         <p className="eyebrow">Public itineraries</p>
-        <h1 className="page-title">Browse routes other people decided were worth sharing.</h1>
-        <p className="lede">Public itineraries are visible to everyone. Logged-in users can save a snapshot copy into their own profile.</p>
+        <h1 className="page-title">See what others planned.</h1>
+        <p className="lede">Browse public routes and save a copy to your account.</p>
         <div className="actions">
           <button className="button-primary" onClick={refresh} disabled={loading}>{loading ? 'Refreshing...' : 'Refresh list'}</button>
           <Link href="/planner" className="button-secondary">Build your own</Link>
@@ -88,8 +88,7 @@ export default function PublicPage() {
                 </div>
                 <span className="status-pill">{new Date(item.createdAt).toLocaleString()}</span>
               </div>
-
-              <p className="helper">Requested slots: {item.input.slots.join(', ')}</p>
+              <p className="muted-line">{item.input.slots.join(' · ')}</p>
               <div className="plain-list">
                 {item.result.map((slot, idx) => (
                   <div key={`${slot.place.name}-${idx}`} className="simple-row">

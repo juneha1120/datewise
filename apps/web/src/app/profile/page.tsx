@@ -74,10 +74,10 @@ export default function ProfilePage() {
 
   return (
     <main className="page-stack">
-      <section className="hero">
+      <section className="hero hero-compact">
         <p className="eyebrow">Profile</p>
-        <h1 className="page-title">Manage your account, private itineraries, and saved copies.</h1>
-        <p className="lede">This page combines the authenticated flows from the spec: view your account, inspect itineraries you saved, and track copied public routes.</p>
+        <h1 className="page-title">Your account and saved routes.</h1>
+        <p className="lede">Review saved itineraries, copied routes, and account details.</p>
         <div className="actions">
           <button className="button-primary" onClick={load}>Refresh profile data</button>
           <button
@@ -135,13 +135,10 @@ export default function ProfilePage() {
               {mine.map((item) => (
                 <article key={item.id} className="simple-row">
                   <div className="simple-row-top">
-                    <div>
-                      <strong>{item.input.startPoint.name}</strong>
-                      <p className="helper">{item.result.length} stops</p>
-                    </div>
+                    <strong>{item.input.startPoint.name}</strong>
                     <span className="status-pill">{item.isPublic ? 'Public' : 'Private'}</span>
                   </div>
-                  <p className="helper">{new Date(item.createdAt).toLocaleString()}</p>
+                  <p className="muted-line">{item.result.length} stops · {new Date(item.createdAt).toLocaleDateString()}</p>
                   <Link href={`/itinerary/${item.id}`} className="button-ghost">Open detail</Link>
                 </article>
               ))}
@@ -165,13 +162,10 @@ export default function ProfilePage() {
               {saved.map((item) => (
                 <article key={item.id} className="simple-row">
                   <div className="simple-row-top">
-                    <div>
-                      <strong>{item.snapshot.id.slice(0, 8)}</strong>
-                      <p className="helper">{item.snapshot.result.length} snapshot stops</p>
-                    </div>
+                    <strong>{item.snapshot.id.slice(0, 8)}</strong>
                     <span className="status-pill">{new Date(item.createdAt).toLocaleDateString()}</span>
                   </div>
-                  <p className="helper">Source itinerary {item.sourceItineraryId.slice(0, 8)}</p>
+                  <p className="muted-line">{item.snapshot.result.length} stops · source {item.sourceItineraryId.slice(0, 8)}</p>
                   <Link href={`/itinerary/${item.id}`} className="button-ghost">Open detail</Link>
                 </article>
               ))}

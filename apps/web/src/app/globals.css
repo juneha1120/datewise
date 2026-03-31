@@ -173,8 +173,8 @@ button:disabled {
 
 .hero {
   display: grid;
-  gap: 1.25rem;
-  padding: 2rem;
+  gap: 1rem;
+  padding: 1.6rem;
   background:
     linear-gradient(135deg, rgba(245, 158, 11, 0.16), transparent 50%),
     linear-gradient(180deg, rgba(15, 23, 42, 0.88), rgba(17, 24, 39, 0.92));
@@ -236,17 +236,18 @@ button:disabled {
 }
 
 .display-title {
-  font-size: clamp(3rem, 8vw, 5.6rem);
+  font-size: clamp(2.7rem, 6vw, 4.4rem);
 }
 
 .page-title {
-  font-size: clamp(2.3rem, 4vw, 3.2rem);
+  font-size: clamp(2rem, 3.3vw, 2.8rem);
 }
 
 .lede,
 .section-copy {
   margin: 0;
-  line-height: 1.6;
+  max-width: 62ch;
+  line-height: 1.5;
   color: var(--muted);
 }
 
@@ -292,7 +293,7 @@ button:disabled {
 
 .panel,
 .card {
-  padding: 1.2rem;
+  padding: 1rem;
 }
 
 .hero > .actions,
@@ -316,10 +317,14 @@ button:disabled {
 .section-title,
 .card-title {
   margin: 0;
-  font-size: 1.15rem;
+  font-size: 1.05rem;
   font-family: "Trebuchet MS", "Gill Sans", sans-serif;
   line-height: 1.2;
   text-wrap: balance;
+}
+
+.section-title-lg {
+  font-size: 1.35rem;
 }
 
 .form-grid {
@@ -350,8 +355,8 @@ button:disabled {
 .timeline-card,
 .simple-row {
   display: grid;
-  gap: 0.8rem;
-  padding: 1rem;
+  gap: 0.7rem;
+  padding: 0.9rem;
   border-radius: 20px;
   border: 1px solid var(--border);
   background: rgba(15, 23, 42, 0.7);
@@ -416,8 +421,8 @@ button:disabled {
 
 .helper {
   margin: 0;
-  font-size: 0.92rem;
-  line-height: 1.5;
+  font-size: 0.88rem;
+  line-height: 1.45;
 }
 
 .status-message {
@@ -451,7 +456,7 @@ button:disabled {
 }
 
 .timeline-card {
-  padding: 1.15rem;
+  padding: 1rem;
 }
 
 .timeline-index {
@@ -472,6 +477,46 @@ button:disabled {
 
 .stats-grid .card {
   min-height: 100%;
+}
+
+.metrics-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.metric {
+  min-width: 8.5rem;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.metric strong {
+  display: block;
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.metric span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.hero-compact {
+  gap: 0.75rem;
+}
+
+.list-compact {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.muted-line {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
 }
 
 @media (max-width: 900px) {
@@ -495,7 +540,7 @@ button:disabled {
   }
 
   .display-title {
-    font-size: clamp(2.6rem, 14vw, 4.25rem);
+    font-size: clamp(2.4rem, 12vw, 3.7rem);
   }
 }
 
