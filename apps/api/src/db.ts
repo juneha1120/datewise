@@ -1,4 +1,5 @@
 import type { GenerateItineraryInput, ItineraryRecord, ItinerarySlot } from '@datewise/shared';
+export { prisma } from './persistence';
 
 export type User = {
   id: string;

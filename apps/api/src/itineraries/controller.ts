@@ -1,8 +1,6 @@
 import { Body, Controller, Get, Headers, Param, Post, UnauthorizedException } from '@nestjs/common';
 import { type GenerateItineraryInput, type ItinerarySlot, type RegenerateSlotInput } from '@datewise/shared';
-import { randomUUID } from 'node:crypto';
 import { AuthService } from '../auth/service';
-import { db } from '../db';
 import { GeneratorService } from './generator.service';
 
 @Controller('itineraries')
@@ -38,34 +36,23 @@ export class ItinerariesController {
   @Get('mine')
   async mine(@Headers('authorization') authorization: string | undefined) {
     const userId = await this.userIdFromHeader(authorization);
-    return [...db.itineraries.values()].filter((entry) => entry.userId === userId);
+    return this.generator.listMine(userId);
   }
 
   @Get('public')
   async publicList() {
-    return [...db.itineraries.values()].filter((entry) => entry.isPublic);
+    return this.generator.listPublic();
   }
 
   @Post('public/:id/save-copy')
   async savePublicCopy(@Headers('authorization') authorization: string | undefined, @Param('id') id: string) {
     const userId = await this.userIdFromHeader(authorization);
-    const source = db.itineraries.get(id);
-    if (!source || !source.isPublic) throw new UnauthorizedException('Public itinerary not found');
-    const saved = {
-      id: randomUUID(),
-      userId,
-      sourceItineraryId: source.id,
-      sourceUserId: source.userId,
-      snapshot: { ...source, result: source.result.map((slot) => ({ ...slot, place: { ...slot.place } })) },
-      createdAt: new Date().toISOString(),
-    };
-    db.saved.set(saved.id, saved);
-    return saved;
+    return this.generator.savePublicCopy(userId, id);
   }
 
   @Get('saved/mine')
   async mySaved(@Headers('authorization') authorization: string | undefined) {
     const userId = await this.userIdFromHeader(authorization);
-    return [...db.saved.values()].filter((entry) => entry.userId === userId);
+    return this.generator.listSaved(userId);
   }
 }

@@ -1,7 +1,8 @@
 import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
-import { db, type User } from '../db';
-import { fetchWithRetry, type ExternalHttpError } from '../external.http';
+import { prisma, type User } from '../db';
+import { mapAuthUser, mapItineraryRecord, mapSavedRecord } from '../persistence';
+import { fetchWithRetry, type ExternalHttpError } from '../external-http';
 
 export type AuthUser = { id: string; email: string; displayName: string; profileImage: string | null };
 type SupabaseUser = { id: string; email?: string; user_metadata?: { full_name?: string; avatar_url?: string } };
@@ -14,7 +15,7 @@ type GoogleTokenInfo = {
   aud?: string;
 };
 
-function tokenFor(user: User) {
+function tokenFor(user: Pick<User, 'id' | 'email'>) {
   return Buffer.from(`${user.id}:${user.email}`).toString('base64url');
 }
 
@@ -28,25 +29,28 @@ export class AuthService {
   private supabaseCache = new Map<string, { user: SupabaseUser; expiresAt: number }>();
 
   async signup(input: { email: string; password: string; displayName?: string }) {
-    const existing = [...db.users.values()].find((user) => user.email === input.email);
+    const existing = await prisma.user.findUnique({ where: { email: input.email } });
     if (existing) throw new UnauthorizedException('Email already registered');
-    const user: User = {
-      id: randomUUID(),
-      email: input.email,
-      displayName: input.displayName?.trim() || fallbackDisplayName(input.email),
-      profileImage: null,
-      password: createHash('sha256').update(input.password).digest('hex'),
-      provider: 'EMAIL',
-    };
-    db.users.set(user.id, user);
-    return { token: tokenFor(user), user };
+
+    const user = await prisma.user.create({
+      data: {
+        id: randomUUID(),
+        email: input.email,
+        displayName: input.displayName?.trim() || fallbackDisplayName(input.email),
+        profileImage: null,
+        passwordHash: createHash('sha256').update(input.password).digest('hex'),
+        authProvider: 'EMAIL',
+      },
+    });
+
+    return { token: tokenFor(user), user: mapAuthUser(user) };
   }
 
   async login(input: { email: string; password: string }) {
-    const user = [...db.users.values()].find((entry) => entry.email === input.email && entry.provider === 'EMAIL');
+    const user = await prisma.user.findUnique({ where: { email: input.email } });
     const passwordHash = createHash('sha256').update(input.password).digest('hex');
-    if (!user || user.password !== passwordHash) throw new UnauthorizedException('Invalid credentials');
-    return { token: tokenFor(user), user };
+    if (!user || user.authProvider !== 'EMAIL' || user.passwordHash !== passwordHash) throw new UnauthorizedException('Invalid credentials');
+    return { token: tokenFor(user), user: mapAuthUser(user) };
   }
 
   private async verifyGoogleIdToken(idToken: string): Promise<GoogleTokenInfo> {
@@ -87,16 +91,24 @@ export class AuthService {
   async googleLogin(input: { idToken: string }) {
     const tokenInfo = await this.verifyGoogleIdToken(input.idToken);
     const displayName = tokenInfo.name?.trim() || fallbackDisplayName(tokenInfo.email);
-    let user = [...db.users.values()].find((entry) => entry.email === tokenInfo.email);
-    if (!user) {
-      user = { id: randomUUID(), email: tokenInfo.email, displayName, profileImage: tokenInfo.picture ?? null, provider: 'GOOGLE' };
-    } else {
-      user.displayName = displayName;
-      user.profileImage = tokenInfo.picture ?? user.profileImage;
-      user.provider = 'GOOGLE';
-    }
-    db.users.set(user.id, user);
-    return { token: tokenFor(user), user };
+
+    const user = await prisma.user.upsert({
+      where: { email: tokenInfo.email },
+      update: {
+        displayName,
+        profileImage: tokenInfo.picture ?? null,
+        authProvider: 'GOOGLE',
+      },
+      create: {
+        id: randomUUID(),
+        email: tokenInfo.email,
+        displayName,
+        profileImage: tokenInfo.picture ?? null,
+        authProvider: 'GOOGLE',
+      },
+    });
+
+    return { token: tokenFor(user), user: mapAuthUser(user) };
   }
 
   private parseLocalToken(token: string): { id: string; email: string } | null {
@@ -110,12 +122,12 @@ export class AuthService {
     }
   }
 
-  private getLocalUserFromToken(token: string): AuthUser | null {
+  private async getLocalUserFromToken(token: string): Promise<AuthUser | null> {
     const parsed = this.parseLocalToken(token);
     if (!parsed) return null;
-    const user = db.users.get(parsed.id);
+    const user = await prisma.user.findUnique({ where: { id: parsed.id } });
     if (!user) return null;
-    return { id: user.id, email: user.email, displayName: user.displayName, profileImage: user.profileImage };
+    return mapAuthUser(user);
   }
 
   private async fetchSupabaseUser(accessToken: string): Promise<SupabaseUser> {
@@ -153,21 +165,31 @@ export class AuthService {
     return user;
   }
 
-  private upsertSupabaseUser(user: SupabaseUser): AuthUser {
-    const existing = db.users.get(user.id) ?? [...db.users.values()].find((entry) => entry.email === user.email);
-    const next: User = {
-      id: user.id,
-      email: user.email ?? existing?.email ?? `${user.id}@supabase.local`,
-      displayName: user.user_metadata?.full_name ?? existing?.displayName ?? 'Datewise User',
-      profileImage: user.user_metadata?.avatar_url ?? existing?.profileImage ?? null,
-      provider: 'GOOGLE',
-    };
-    db.users.set(next.id, next);
-    return { id: next.id, email: next.email, displayName: next.displayName, profileImage: next.profileImage };
+  private async upsertSupabaseUser(user: SupabaseUser): Promise<AuthUser> {
+    const email = user.email ?? `${user.id}@supabase.local`;
+    const existing = await prisma.user.findUnique({ where: { email } });
+
+    const next = await prisma.user.upsert({
+      where: { email },
+      update: {
+        displayName: user.user_metadata?.full_name ?? existing?.displayName ?? 'Datewise User',
+        profileImage: user.user_metadata?.avatar_url ?? existing?.profileImage ?? null,
+        authProvider: 'GOOGLE',
+      },
+      create: {
+        id: existing?.id ?? user.id,
+        email,
+        displayName: user.user_metadata?.full_name ?? existing?.displayName ?? 'Datewise User',
+        profileImage: user.user_metadata?.avatar_url ?? existing?.profileImage ?? null,
+        authProvider: 'GOOGLE',
+      },
+    });
+
+    return mapAuthUser(next);
   }
 
   async getMe(token: string): Promise<AuthUser> {
-    const local = this.getLocalUserFromToken(token);
+    const local = await this.getLocalUserFromToken(token);
     if (local) return local;
 
     const parsedLocal = this.parseLocalToken(token);
@@ -182,18 +204,26 @@ export class AuthService {
   async updateDisplayName(token: string, displayName: string): Promise<AuthUser> {
     const nextName = displayName.trim();
     if (!nextName) throw new BadRequestException('Display name cannot be empty');
+
     const me = await this.getMe(token);
-    const existing = db.users.get(me.id);
+    const existing = await prisma.user.findUnique({ where: { id: me.id } });
     if (!existing) throw new UnauthorizedException('User not found');
-    existing.displayName = nextName;
-    db.users.set(existing.id, existing);
-    return { id: existing.id, email: existing.email, displayName: existing.displayName, profileImage: existing.profileImage };
+
+    const updated = await prisma.user.update({ where: { id: me.id }, data: { displayName: nextName } });
+    return mapAuthUser(updated);
   }
 
   async profile(token: string) {
     const me = await this.getMe(token);
-    const mine = [...db.itineraries.values()].filter((entry) => entry.userId === me.id);
-    const saved = [...db.saved.values()].filter((entry) => entry.userId === me.id);
-    return { user: me, itineraries: mine, saved };
+    const [mine, saved] = await Promise.all([
+      prisma.itinerary.findMany({ where: { userId: me.id }, include: { slots: true }, orderBy: { createdAt: 'desc' } }),
+      prisma.savedItinerary.findMany({
+        where: { userId: me.id },
+        include: { itinerary: { include: { slots: true } } },
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
+
+    return { user: me, itineraries: mine.map(mapItineraryRecord), saved: saved.map(mapSavedRecord) };
   }
 }

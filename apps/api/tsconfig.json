@@ -10,6 +10,9 @@
     "sourceMap": true,
     "outDir": "./dist",
     "baseUrl": "./",
+    "paths": {
+      "@datewise/shared": ["../../packages/shared/src/index.ts"]
+    },
     "strict": true,
     "skipLibCheck": true,
     "esModuleInterop": true

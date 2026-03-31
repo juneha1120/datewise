@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import {
   DURATION_BY_CORE,
   type GenerateItineraryInput,
@@ -13,8 +13,8 @@ import {
   type SlotType,
   isSubgroup,
 } from '@datewise/shared';
-import { randomUUID } from 'node:crypto';
-import { db } from '../db';
+import { prisma } from '../db';
+import { buildItineraryTitle, mapItineraryRecord, mapSavedRecord, serializeSlots } from '../persistence';
 import { PlacesProvider } from '../places/provider';
 import { ScoringService } from './scoring.service';
 import { TaggingService } from './tagging.service';
@@ -34,7 +34,7 @@ export class GeneratorService {
   constructor(private readonly places: PlacesProvider, private readonly scoring: ScoringService) {}
 
   private subgroupCandidates(selection: SlotType, avoided: Set<string>) {
-    const expanded = expandSelection(selection).filter((entry) => !avoided.has(entry));
+    const expanded = expandSelection(selection).filter((entry: string) => !avoided.has(entry));
     if (expanded.length === 0) throw new BadRequestException('No allowed subgroup candidates');
     return isSubgroup(selection) ? expanded : expanded.slice(0, 4);
   }
@@ -69,7 +69,7 @@ export class GeneratorService {
     if (conflicts.length > 0) throw new BadRequestException({ message: 'Slot conflict', conflicts });
 
     const baseDateTime = combineDateTime(parsed.date, parsed.time);
-    const avoided = new Set(parsed.avoidSlots.flatMap((item) => expandSelection(item)));
+    const avoided = new Set<string>(parsed.avoidSlots.flatMap((item: SlotType) => expandSelection(item)));
     const usedPlaceIds = new Set<string>();
     let cursor = { lat: parsed.startPoint.latitude, lng: parsed.startPoint.longitude };
     let currentMinutes = 0;
@@ -120,7 +120,7 @@ export class GeneratorService {
 
     const previous = parsed.slotIndex === 0 ? parsed.startPoint : base[parsed.slotIndex - 1].place;
     const arrival = parsed.slotIndex === 0 ? new Date(`${parsed.date}T${parsed.time}:00`) : new Date(base[parsed.slotIndex - 1].departureTime);
-    const avoided = new Set(parsed.avoidSlots.flatMap((item) => expandSelection(item)));
+    const avoided = new Set<string>(parsed.avoidSlots.flatMap((item: SlotType) => expandSelection(item)));
     const picked = await this.pickBest(parsed.slots[parsed.slotIndex] as SlotType, { lat: previous.latitude, lng: previous.longitude }, arrival, blocked, avoided);
 
     return {
@@ -140,22 +140,94 @@ export class GeneratorService {
 
   async saveGenerated(userId: string, input: GenerateItineraryInput, result: ItinerarySlot[], isPublic: boolean) {
     const parsedInput = generateItineraryInputSchema.parse(input);
-    // Validate client payload for compatibility while persisting a server-generated canonical result.
     itinerarySlotSchema.array().parse(result);
     const normalizedResult = await this.generate(parsedInput);
-    const now = new Date().toISOString();
-    const itinerary = {
-      id: randomUUID(),
-      userId,
-      input: parsedInput,
-      result: normalizedResult,
-      isPublic,
-      createdAt: now,
-      updatedAt: now,
-      editedAfterGeneration: false,
-      sourceItineraryId: null,
-    };
-    db.itineraries.set(itinerary.id, itinerary);
-    return itinerary;
+
+    const created = await prisma.itinerary.create({
+      data: {
+        userId,
+        title: buildItineraryTitle(parsedInput),
+        isPublic,
+        inputJson: JSON.stringify(parsedInput),
+        edited: false,
+        sourceId: null,
+        slots: {
+          create: serializeSlots(parsedInput, normalizedResult),
+        },
+      },
+      include: { slots: true },
+    });
+
+    return mapItineraryRecord(created);
+  }
+
+  async listMine(userId: string) {
+    const rows = await prisma.itinerary.findMany({
+      where: { userId },
+      include: { slots: true },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return rows.map(mapItineraryRecord);
+  }
+
+  async listPublic() {
+    const rows = await prisma.itinerary.findMany({
+      where: { isPublic: true },
+      include: { slots: true },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return rows.map(mapItineraryRecord);
+  }
+
+  async savePublicCopy(userId: string, itineraryId: string) {
+    const source = await prisma.itinerary.findUnique({
+      where: { id: itineraryId },
+      include: { slots: true },
+    });
+
+    if (!source || !source.isPublic) throw new UnauthorizedException('Public itinerary not found');
+
+    const snapshot = mapItineraryRecord(source);
+    const saved = await prisma.savedItinerary.upsert({
+      where: {
+        userId_itineraryId: {
+          userId,
+          itineraryId,
+        },
+      },
+      update: {
+        snapshotJson: JSON.stringify(snapshot),
+        sourceUserId: source.userId,
+      },
+      create: {
+        userId,
+        itineraryId,
+        snapshotJson: JSON.stringify(snapshot),
+        sourceUserId: source.userId,
+      },
+      include: {
+        itinerary: {
+          include: { slots: true },
+        },
+      },
+    });
+
+    return mapSavedRecord(saved);
+  }
+
+  async listSaved(userId: string) {
+    const rows = await prisma.savedItinerary.findMany({
+      where: { userId },
+      include: {
+        itinerary: {
+          include: { slots: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return rows.map(mapSavedRecord);
   }
 }

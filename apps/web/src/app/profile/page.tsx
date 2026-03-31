@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
-import { apiBaseUrl, readSession } from '../../lib/auth';
+import Link from 'next/link';
+import { useEffect, useState } from 'react';
+import { apiBaseUrl, clearSession, readSession } from '../../lib/auth';
 
 type User = { id: string; email: string; displayName: string; profileImage: string | null };
-type Itinerary = { id: string; createdAt: string; isPublic: boolean; result: Array<{ place: { name: string } }> };
-type Saved = { id: string; sourceItineraryId: string; createdAt: string; snapshot: { id: string } };
+type Itinerary = { id: string; createdAt: string; isPublic: boolean; input: { startPoint: { name: string } }; result: Array<{ place: { name: string } }> };
+type Saved = { id: string; sourceItineraryId: string; createdAt: string; snapshot: { id: string; result: Array<{ place: { name: string } }> } };
 
 export default function ProfilePage() {
   const [user, setUser] = useState<User | null>(null);
@@ -13,10 +14,14 @@ export default function ProfilePage() {
   const [saved, setSaved] = useState<Saved[]>([]);
   const [displayName, setDisplayName] = useState('');
   const [error, setError] = useState('');
+  const [info, setInfo] = useState('');
 
   async function load() {
     const token = readSession()?.accessToken;
-    if (!token) return setError('Please login first');
+    if (!token) {
+      setError('Please login first');
+      return;
+    }
 
     const headers = { authorization: `Bearer ${token}` };
     const [meResponse, mineResponse, savedResponse] = await Promise.all([
@@ -25,7 +30,10 @@ export default function ProfilePage() {
       fetch(`${apiBaseUrl()}/itineraries/saved/mine`, { headers }),
     ]);
 
-    if (!meResponse.ok || !mineResponse.ok || !savedResponse.ok) return setError('Failed to load profile data');
+    if (!meResponse.ok || !mineResponse.ok || !savedResponse.ok) {
+      setError('Failed to load profile data');
+      return;
+    }
 
     const nextUser = (await meResponse.json()) as User;
     setUser(nextUser);
@@ -33,11 +41,15 @@ export default function ProfilePage() {
     setMine((await mineResponse.json()) as Itinerary[]);
     setSaved((await savedResponse.json()) as Saved[]);
     setError('');
+    setInfo('Profile refreshed.');
   }
 
   async function saveDisplayName() {
     const token = readSession()?.accessToken;
-    if (!token) return setError('Please login first');
+    if (!token) {
+      setError('Please login first');
+      return;
+    }
 
     const response = await fetch(`${apiBaseUrl()}/auth/display-name`, {
       method: 'POST',
@@ -47,47 +59,125 @@ export default function ProfilePage() {
 
     if (!response.ok) {
       const text = await response.text();
-      return setError(`Failed to save username: ${text}`);
+      setError(`Failed to save username: ${text}`);
+      return;
     }
 
     setUser((await response.json()) as User);
     setError('');
+    setInfo('Display name updated.');
   }
 
+  useEffect(() => {
+    void load();
+  }, []);
+
   return (
-    <main className="mx-auto max-w-3xl space-y-4 p-6">
-      <h1 className="text-3xl font-bold">Profile</h1>
-      <button onClick={load}>Refresh profile data</button>
-      {error && <p className="text-rose-300">{error}</p>}
+    <main className="page-stack">
+      <section className="hero">
+        <p className="eyebrow">Profile</p>
+        <h1 className="page-title">Manage your account, private itineraries, and saved copies.</h1>
+        <p className="lede">This page combines the authenticated flows from the spec: view your account, inspect itineraries you saved, and track copied public routes.</p>
+        <div className="actions">
+          <button className="button-primary" onClick={load}>Refresh profile data</button>
+          <button
+            className="button-secondary"
+            onClick={() => {
+              clearSession();
+              window.location.href = '/login';
+            }}
+          >
+            Log out
+          </button>
+        </div>
+        {error && <p className="status-message error">{error}</p>}
+        {info && <p className="status-message success">{info}</p>}
+      </section>
 
       {user && (
-        <section className="space-y-2 rounded border border-slate-700 p-3">
-          <p>{user.email}</p>
-          <div className="flex gap-2">
-            <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Username" />
-            <button onClick={saveDisplayName}>Save username</button>
+        <section className="panel">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Account</p>
+              <h2 className="section-title">{user.displayName}</h2>
+            </div>
+          </div>
+          <div className="form-grid">
+            <p className="helper">{user.email}</p>
+            <div className="grid-2">
+              <div className="field">
+                <label htmlFor="display-name">Display name</label>
+                <input id="display-name" value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Username" />
+              </div>
+              <div className="field">
+                <label>&nbsp;</label>
+                <button className="button-secondary" onClick={saveDisplayName}>Save display name</button>
+              </div>
+            </div>
           </div>
         </section>
       )}
 
-      <section className="space-y-2 rounded border border-slate-700 p-3">
-        <h2 className="font-semibold">My itineraries ({mine.length})</h2>
-        {mine.map((item) => (
-          <article key={item.id} className="rounded border border-slate-700 p-3">
-            <p>{item.id}</p>
-            <p>{item.isPublic ? 'Public' : 'Private'} · {item.result.length} slots</p>
-          </article>
-        ))}
-      </section>
+      <section className="grid-2">
+        <article className="panel">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Private and public</p>
+              <h2 className="section-title">My itineraries ({mine.length})</h2>
+            </div>
+            <Link href="/planner" className="button-ghost">Create another</Link>
+          </div>
 
-      <section className="space-y-2 rounded border border-slate-700 p-3">
-        <h2 className="font-semibold">Saved public copies ({saved.length})</h2>
-        {saved.map((item) => (
-          <article key={item.id} className="rounded border border-slate-700 p-3">
-            <p>{item.snapshot.id}</p>
-            <p>Saved copy of itinerary {item.sourceItineraryId}</p>
-          </article>
-        ))}
+          {mine.length === 0 ? (
+            <div className="empty-state">No itineraries saved yet.</div>
+          ) : (
+            <div className="plain-list">
+              {mine.map((item) => (
+                <article key={item.id} className="simple-row">
+                  <div className="simple-row-top">
+                    <div>
+                      <strong>{item.input.startPoint.name}</strong>
+                      <p className="helper">{item.result.length} stops</p>
+                    </div>
+                    <span className="status-pill">{item.isPublic ? 'Public' : 'Private'}</span>
+                  </div>
+                  <p className="helper">{new Date(item.createdAt).toLocaleString()}</p>
+                  <Link href={`/itinerary/${item.id}`} className="button-ghost">Open detail</Link>
+                </article>
+              ))}
+            </div>
+          )}
+        </article>
+
+        <article className="panel">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Copied from public</p>
+              <h2 className="section-title">Saved copies ({saved.length})</h2>
+            </div>
+            <Link href="/saved" className="button-ghost">Open saved page</Link>
+          </div>
+
+          {saved.length === 0 ? (
+            <div className="empty-state">No saved public copies yet.</div>
+          ) : (
+            <div className="plain-list">
+              {saved.map((item) => (
+                <article key={item.id} className="simple-row">
+                  <div className="simple-row-top">
+                    <div>
+                      <strong>{item.snapshot.id.slice(0, 8)}</strong>
+                      <p className="helper">{item.snapshot.result.length} snapshot stops</p>
+                    </div>
+                    <span className="status-pill">{new Date(item.createdAt).toLocaleDateString()}</span>
+                  </div>
+                  <p className="helper">Source itinerary {item.sourceItineraryId.slice(0, 8)}</p>
+                  <Link href={`/itinerary/${item.id}`} className="button-ghost">Open detail</Link>
+                </article>
+              ))}
+            </div>
+          )}
+        </article>
       </section>
     </main>
   );
